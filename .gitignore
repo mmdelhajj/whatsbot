@@ -1,0 +1,63 @@
+# Sensitive Configuration Files
+config/config.php
+config/database.php
+.env
+*.env
+
+# API Keys and Credentials
+**/api_keys.php
+**/credentials.php
+
+# Large Files - Product Images (store separately)
+images/
+uploads/
+media/
+product-images/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+*.pdf
+
+# Logs and Cache
+logs/
+*.log
+cache/
+tmp/
+temp/
+
+# Vendor and Dependencies
+vendor/
+node_modules/
+composer.phar
+
+# IDE and Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Database Files
+*.sql
+*.sqlite
+*.db
+
+# Backup Files
+*.bak
+*.backup
+*-backup
+backup/
+
+# Test Files (optional - remove if you want to include tests)
+# admin/test-*.php
+
+# OS Files
+Thumbs.db
+.DS_Store
+
+# Git files
+.git/
+.gitignore.bak
