@@ -203,8 +203,8 @@ $stats = $db->fetchOne("
             <a href="/admin/messages.php">Messages</a>
             <a href="/admin/orders.php" class="active">Orders</a>
             <a href="/admin/products.php">Products</a>
-            <a href="/admin/sync.php">Sync Products</a>
-            <a href="/admin/sync-customers.php">Sync Customers</a>
+            
+            
             <a href="/admin/import-customers.php">Import Customers</a>
             <a href="/admin/settings.php">Settings</a>
             <a href="/admin/test-apis.php">API Tests</a>

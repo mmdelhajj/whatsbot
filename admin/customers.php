@@ -20,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_customer'])) {
     if ($customerId) {
         // Delete related data first
         $db->query("DELETE FROM messages WHERE customer_id = ?", [$customerId]);
-        $db->query("DELETE FROM conversation_context WHERE customer_id = ?", [$customerId]);
+        $db->query("DELETE FROM conversation_state WHERE customer_id = ?", [$customerId]);
         $db->query("DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE customer_id = ?)", [$customerId]);
         $db->query("DELETE FROM orders WHERE customer_id = ?", [$customerId]);
         // Delete customer
@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_customer'])) {
 // Handle delete all customers
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_all_customers'])) {
     $db->query("DELETE FROM messages");
-    $db->query("DELETE FROM conversation_context");
+    $db->query("DELETE FROM conversation_state");
     $db->query("DELETE FROM order_items");
     $db->query("DELETE FROM orders");
     $db->query("DELETE FROM customers");
@@ -42,27 +42,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_all_customers'
 // Handle search
 $searchQuery = isset($_GET['search']) ? trim($_GET['search']) : '';
 
-// Get customers (with search if provided)
+// Pagination settings
+$itemsPerPage = 20;
+$currentPage = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$currentPage = max(1, $currentPage);
+$offset = ($currentPage - 1) * $itemsPerPage;
+
+// Build WHERE clause for search
+$whereClause = '';
+$params = [];
 if (!empty($searchQuery)) {
+    $whereClause = "WHERE phone LIKE ? OR name LIKE ? OR email LIKE ?";
     $searchTerm = "%{$searchQuery}%";
-    $customers = $db->fetchAll("
-        SELECT * FROM customers
-        WHERE phone LIKE ? OR name LIKE ? OR email LIKE ?
-        ORDER BY created_at DESC
-        LIMIT 100
-    ", [$searchTerm, $searchTerm, $searchTerm]);
-} else {
-    $customers = $db->fetchAll("
-        SELECT * FROM customers
-        ORDER BY created_at DESC
-    ");
+    $params = [$searchTerm, $searchTerm, $searchTerm];
 }
+
+// Get total count
+$totalCustomers = $db->fetchOne("SELECT COUNT(*) as count FROM customers {$whereClause}", $params)['count'];
+$totalPages = ceil($totalCustomers / $itemsPerPage);
+
+// Get customers for current page (with search if provided)
+$customers = $db->fetchAll("
+    SELECT * FROM customers
+    {$whereClause}
+    ORDER BY created_at DESC
+    LIMIT ? OFFSET ?
+", array_merge($params, [$itemsPerPage, $offset]));
 
 // Get statistics
 $stats = $db->fetchOne("
     SELECT
         COUNT(*) as total_customers,
-        COUNT(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 END) as new_this_month
+        COUNT(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 END) as new_this_month,
+        COUNT(CASE WHEN email IS NOT NULL AND email != '' THEN 1 END) as with_email
     FROM customers
 ");
 ?>
@@ -100,6 +112,13 @@ $stats = $db->fetchOne("
         .delete-all-btn { background: #dc2626; color: white; padding: 10px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; }
         .delete-all-btn:hover { background: #b91c1c; }
         .success { background: #d1fae5; color: #059669; padding: 12px; border-radius: 8px; margin-bottom: 20px; }
+        .pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding: 20px 0; border-top: 1px solid #e5e7eb; }
+        .pagination-info { color: #6b7280; font-size: 0.9em; }
+        .pagination-buttons { display: flex; gap: 10px; }
+        .pagination-btn { padding: 8px 16px; border-radius: 6px; text-decoration: none; font-weight: 500; transition: all 0.3s; }
+        .pagination-btn.prev, .pagination-btn.next { background: #667eea; color: white; }
+        .pagination-btn.prev:hover, .pagination-btn.next:hover { background: #5568d3; }
+        .pagination-btn.disabled { background: #e5e7eb; color: #9ca3af; pointer-events: none; }
     </style>
 </head>
 <body>
@@ -117,8 +136,6 @@ $stats = $db->fetchOne("
             <a href="/admin/messages.php">Messages</a>
             <a href="/admin/orders.php">Orders</a>
             <a href="/admin/products.php">Products</a>
-            <a href="/admin/sync.php">Sync Products</a>
-            <a href="/admin/sync-customers.php">Sync Customers</a>
             <a href="/admin/import-customers.php">Import Customers</a>
             <a href="/admin/settings.php">Settings</a>
             <a href="/admin/test-apis.php">API Tests</a>
@@ -134,6 +151,13 @@ $stats = $db->fetchOne("
             <div class="stat-card">
                 <h3>New This Month</h3>
                 <div class="value"><?= number_format($stats['new_this_month'] ?? 0) ?></div>
+            </div>
+            <div class="stat-card">
+                <h3>With Email</h3>
+                <div class="value"><?= number_format($stats['with_email'] ?? 0) ?></div>
+                <p style="color: #6b7280; font-size: 0.85em; margin-top: 5px;">
+                    <?= $stats['total_customers'] > 0 ? round(($stats['with_email'] / $stats['total_customers']) * 100, 1) : 0 ?>% of total
+                </p>
             </div>
         </div>
 
@@ -161,15 +185,15 @@ $stats = $db->fetchOne("
 
             <?php if (!empty($searchQuery)): ?>
                 <p style="color: #6b7280; margin-top: 15px; margin-bottom: 0;">
-                    <?= count($customers) ?> result(s) for "<?= htmlspecialchars($searchQuery) ?>"
+                    <?= number_format($totalCustomers) ?> result(s) for "<?= htmlspecialchars($searchQuery) ?>"
                 </p>
             <?php endif; ?>
         </div>
 
         <div class="section">
             <div class="section-header">
-                <h2><?= !empty($searchQuery) ? 'Search Results' : 'All Customers' ?> (<?= count($customers) ?>)</h2>
-                <?php if (!empty($customers)): ?>
+                <h2><?= !empty($searchQuery) ? 'Search Results' : 'All Customers' ?></h2>
+                <?php if ($totalCustomers > 0): ?>
                     <form method="POST" style="display: inline;" onsubmit="return confirm('⚠️ Are you sure you want to DELETE ALL CUSTOMERS? This will also delete all their orders and messages. This cannot be undone!');">
                         <button type="submit" name="delete_all_customers" class="delete-all-btn">🗑️ Delete All Customers</button>
                     </form>
@@ -193,9 +217,9 @@ $stats = $db->fetchOne("
                         <?php foreach ($customers as $customer): ?>
                         <tr>
                             <td><?= htmlspecialchars($customer['phone']) ?></td>
-                            <td><strong><?= htmlspecialchars($customer['name'] ?: 'N/A') ?></strong></td>
-                            <td><?= htmlspecialchars($customer['email'] ?: 'N/A') ?></td>
-                            <td><?= htmlspecialchars($customer['brains_account_code'] ?: 'N/A') ?></td>
+                            <td><strong><?= htmlspecialchars($customer['name'] ?: '-') ?></strong></td>
+                            <td><?= $customer['email'] ? htmlspecialchars($customer['email']) : '<span style="color: #9ca3af;">-</span>' ?></td>
+                            <td><?= htmlspecialchars($customer['brains_account_code'] ?: '-') ?></td>
                             <td><?= date('M d, Y', strtotime($customer['created_at'])) ?></td>
                             <td>
                                 <form method="POST" style="display: inline;" onsubmit="return confirm('⚠️ Are you sure you want to delete customer <?= htmlspecialchars($customer['phone']) ?>? This will also delete their orders and messages.');">
@@ -207,6 +231,35 @@ $stats = $db->fetchOne("
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+
+                <?php if ($totalPages > 1): ?>
+                <div class="pagination">
+                    <div class="pagination-info">
+                        Showing <?= ($offset + 1) ?> - <?= min($offset + $itemsPerPage, $totalCustomers) ?> of <?= number_format($totalCustomers) ?> customers<?= !empty($searchQuery) ? ' (filtered)' : '' ?> (Page <?= $currentPage ?> of <?= $totalPages ?>)
+                    </div>
+                    <div class="pagination-buttons">
+                        <?php
+                        $prevUrl = "?page=" . ($currentPage - 1);
+                        $nextUrl = "?page=" . ($currentPage + 1);
+                        if (!empty($searchQuery)) {
+                            $prevUrl .= "&search=" . urlencode($searchQuery);
+                            $nextUrl .= "&search=" . urlencode($searchQuery);
+                        }
+                        ?>
+                        <?php if ($currentPage > 1): ?>
+                            <a href="<?= $prevUrl ?>" class="pagination-btn prev">← Previous</a>
+                        <?php else: ?>
+                            <span class="pagination-btn disabled">← Previous</span>
+                        <?php endif; ?>
+
+                        <?php if ($currentPage < $totalPages): ?>
+                            <a href="<?= $nextUrl ?>" class="pagination-btn next">Next →</a>
+                        <?php else: ?>
+                            <span class="pagination-btn disabled">Next →</span>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
             <?php endif; ?>
         </div>
     </div>

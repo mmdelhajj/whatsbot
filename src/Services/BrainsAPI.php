@@ -49,7 +49,7 @@ class BrainsAPI {
         }
 
         foreach ($accounts as $account) {
-            if (isset($account['AccoCode']) && $account['AccoCode'] == $accountCode) {
+            if (isset($account['AccountNumber']) && $account['AccountNumber'] == $accountCode) {
                 return $account;
             }
         }
@@ -71,8 +71,8 @@ class BrainsAPI {
         $normalizedPhone = preg_replace('/[^0-9]/', '', $phone);
 
         foreach ($accounts as $account) {
-            if (isset($account['Phone'])) {
-                $accountPhone = preg_replace('/[^0-9]/', '', $account['Phone']);
+            if (isset($account['Telephone'])) {
+                $accountPhone = preg_replace('/[^0-9]/', '', $account['Telephone']);
 
                 // Compare last 8 digits (Lebanese mobile numbers)
                 if (substr($normalizedPhone, -8) === substr($accountPhone, -8)) {

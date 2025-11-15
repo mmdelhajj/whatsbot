@@ -68,10 +68,23 @@ try {
     $attachment = $data['attachment'] ?? null;
 
     // Validate required fields
-    if (!$phone || !$message) {
-        logMessage("Missing required fields in webhook data", 'ERROR', WEBHOOK_LOG_FILE);
+    if (!$phone) {
+        logMessage("Missing phone in webhook data", 'ERROR', WEBHOOK_LOG_FILE);
         http_response_code(400);
-        echo json_encode(['error' => 'Missing phone or message']);
+        echo json_encode(['error' => 'Missing phone']);
+        exit;
+    }
+
+    // If no message but has attachment, set default message
+    if (empty($message) && !empty($attachment)) {
+        $message = '[Image received]';
+    }
+
+    // If still no message, reject
+    if (empty($message)) {
+        logMessage("Missing message in webhook data", 'ERROR', WEBHOOK_LOG_FILE);
+        http_response_code(400);
+        echo json_encode(['error' => 'Missing message']);
         exit;
     }
 

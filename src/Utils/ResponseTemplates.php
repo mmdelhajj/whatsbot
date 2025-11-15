@@ -195,31 +195,38 @@ class ResponseTemplates {
         $name = $orderData['customer_name'];
         $email = $orderData['customer_email'];
         $address = $orderData['customer_address'];
-        $price = number_format($orderData['price'], 0);
+        $quantity = $orderData['quantity'] ?? 1;
+        $unitPrice = number_format($orderData['price'], 0);
+        $totalPrice = number_format($orderData['price'] * $quantity, 0);
+
+        $quantityText = $quantity > 1 ? " (x{$quantity})" : "";
 
         $messages = [
             'ar' => "✅ *تم إنشاء طلبك بنجاح!*\n\n" .
-                    "📦 *المنتج:* {$product}\n" .
+                    "📦 *المنتج:* {$product}{$quantityText}\n" .
                     "👤 *الاسم:* {$name}\n" .
                     "📧 *البريد:* {$email}\n" .
                     "📍 *العنوان:* {$address}\n" .
-                    "💰 *السعر:* {$price} " . CURRENCY . "\n\n" .
+                    ($quantity > 1 ? "💰 *السعر للقطعة:* {$unitPrice} " . CURRENCY . "\n" : "") .
+                    "💰 *المبلغ الإجمالي:* {$totalPrice} " . CURRENCY . "\n\n" .
                     "سنتواصل معك قريباً لتأكيد التوصيل! 🙏",
 
             'en' => "✅ *Your order has been created successfully!*\n\n" .
-                    "📦 *Product:* {$product}\n" .
+                    "📦 *Product:* {$product}{$quantityText}\n" .
                     "👤 *Name:* {$name}\n" .
                     "📧 *Email:* {$email}\n" .
                     "📍 *Address:* {$address}\n" .
-                    "💰 *Price:* {$price} " . CURRENCY . "\n\n" .
+                    ($quantity > 1 ? "💰 *Unit Price:* {$unitPrice} " . CURRENCY . "\n" : "") .
+                    "💰 *Total:* {$totalPrice} " . CURRENCY . "\n\n" .
                     "We will contact you soon to confirm delivery! 🙏",
 
             'fr' => "✅ *Votre commande a été créée avec succès!*\n\n" .
-                    "📦 *Produit:* {$product}\n" .
+                    "📦 *Produit:* {$product}{$quantityText}\n" .
                     "👤 *Nom:* {$name}\n" .
                     "📧 *Email:* {$email}\n" .
                     "📍 *Adresse:* {$address}\n" .
-                    "💰 *Prix:* {$price} " . CURRENCY . "\n\n" .
+                    ($quantity > 1 ? "💰 *Prix unitaire:* {$unitPrice} " . CURRENCY . "\n" : "") .
+                    "💰 *Total:* {$totalPrice} " . CURRENCY . "\n\n" .
                     "Nous vous contacterons bientôt pour confirmer la livraison! 🙏"
         ];
 
@@ -253,6 +260,38 @@ class ResponseTemplates {
                     "💰 Solde: {$balance} " . CURRENCY . "\n" .
                     "📊 Limite de crédit: {$creditLimit} " . CURRENCY . "\n" .
                     "✅ Disponible: {$available} " . CURRENCY
+        ];
+
+        return $messages[$lang] ?? $messages['en'];
+    }
+
+    /**
+     * Ask for product confirmation
+     */
+    public static function askProductConfirmation($lang, $productName) {
+        $messages = [
+            'ar' => "✅ هل هذا ما تحتاجه؟\n\n*{$productName}*\n\n👉 اكتب *1* للتأكيد والمتابعة\n📝 أو ابحث عن منتج آخر",
+            'en' => "✅ Is this what you need?\n\n*{$productName}*\n\n👉 Type *1* to confirm and continue\n📝 Or search for another product",
+            'fr' => "✅ Est-ce que c'est ce dont vous avez besoin?\n\n*{$productName}*\n\n👉 Tapez *1* pour confirmer et continuer\n📝 Ou cherchez un autre produit"
+        ];
+
+        return $messages[$lang] ?? $messages['en'];
+    }
+
+    /**
+     * Ask for quantity
+     */
+    public static function askQuantity($lang, $productName) {
+        $messages = [
+            'ar' => "📦 *{$productName}*\n\n" .
+                    "كم قطعة تريد؟\n\n" .
+                    "👉 اكتب الكمية (مثال: *5*)",
+            'en' => "📦 *{$productName}*\n\n" .
+                    "How many pieces do you want?\n\n" .
+                    "👉 Type the quantity (example: *5*)",
+            'fr' => "📦 *{$productName}*\n\n" .
+                    "Combien de pièces voulez-vous?\n\n" .
+                    "👉 Tapez la quantité (exemple: *5*)"
         ];
 
         return $messages[$lang] ?? $messages['en'];

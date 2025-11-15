@@ -15,6 +15,54 @@ if (!isset($_SESSION['admin_logged_in']) || !$_SESSION['admin_logged_in']) {
 $message = '';
 $messageType = '';
 
+// Handle password change
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
+    try {
+        $currentPassword = $_POST['current_password'] ?? '';
+        $newPassword = $_POST['new_password'] ?? '';
+        $confirmPassword = $_POST['confirm_password'] ?? '';
+
+        // Validate inputs
+        if (empty($currentPassword) || empty($newPassword) || empty($confirmPassword)) {
+            throw new Exception('All password fields are required');
+        }
+
+        if ($newPassword !== $confirmPassword) {
+            throw new Exception('New passwords do not match');
+        }
+
+        if (strlen($newPassword) < 6) {
+            throw new Exception('Password must be at least 6 characters');
+        }
+
+        // Verify current password
+        $db = Database::getInstance();
+        $user = $db->fetchOne(
+            "SELECT * FROM admin_users WHERE id = ?",
+            [$_SESSION['admin_user_id']]
+        );
+
+        if (!$user || !password_verify($currentPassword, $user['password'])) {
+            throw new Exception('Current password is incorrect');
+        }
+
+        // Update password
+        $hashedPassword = password_hash($newPassword, PASSWORD_BCRYPT);
+        $db->update('admin_users',
+            ['password' => $hashedPassword],
+            'id = :id',
+            ['id' => $_SESSION['admin_user_id']]
+        );
+
+        $message = '✅ Password changed successfully!';
+        $messageType = 'success';
+
+    } catch (Exception $e) {
+        $message = '❌ Error changing password: ' . $e->getMessage();
+        $messageType = 'error';
+    }
+}
+
 // Handle settings update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
     try {
@@ -37,7 +85,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
             'TIMEZONE' => $_POST['timezone'] ?? 'Asia/Beirut',
             'CURRENCY' => $_POST['currency'] ?? 'LBP',
             'STORE_NAME' => $_POST['store_name'] ?? '',
-            'STORE_LOCATION' => $_POST['store_location'] ?? ''
+            'STORE_LOCATION' => $_POST['store_location'] ?? '',
+            'STORE_PHONE' => $_POST['store_phone'] ?? '',
+            'STORE_WEBSITE' => $_POST['store_website'] ?? '',
+            'STORE_HOURS' => $_POST['store_hours'] ?? ''
         ];
 
         foreach ($updates as $key => $value) {
@@ -54,7 +105,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
 
         // Write back to .env file
         if (file_put_contents($envFile, $envContent)) {
-            $message = '✅ Settings saved successfully!';
+            // Reload PHP-FPM in background after 2 seconds (so this response completes first)
+            exec('(sleep 2 && sudo systemctl reload php8.1-fpm) > /dev/null 2>&1 &');
+
+            $message = '✅ Settings saved successfully! Changes will take effect in a few seconds.';
             $messageType = 'success';
         } else {
             throw new Exception('Failed to write to .env file');
@@ -80,7 +134,10 @@ $currentSettings = [
     'timezone' => env('TIMEZONE', 'Asia/Beirut'),
     'currency' => env('CURRENCY', 'LBP'),
     'store_name' => env('STORE_NAME', ''),
-    'store_location' => env('STORE_LOCATION', '')
+    'store_location' => env('STORE_LOCATION', ''),
+    'store_phone' => env('STORE_PHONE', ''),
+    'store_website' => env('STORE_WEBSITE', ''),
+    'store_hours' => env('STORE_HOURS', '')
 ];
 ?>
 <!DOCTYPE html>
@@ -134,8 +191,8 @@ $currentSettings = [
             <a href="/admin/messages.php">Messages</a>
             <a href="/admin/orders.php">Orders</a>
             <a href="/admin/products.php">Products</a>
-            <a href="/admin/sync.php">Sync Products</a>
-            <a href="/admin/sync-customers.php">Sync Customers</a>
+            
+            
             <a href="/admin/import-customers.php">Import Customers</a>
             <a href="/admin/settings.php" class="active">Settings</a>
             <a href="/admin/test-apis.php">API Tests</a>
@@ -148,6 +205,31 @@ $currentSettings = [
             <?= htmlspecialchars($message) ?>
         </div>
         <?php endif; ?>
+
+        <!-- Change Password Section -->
+        <div class="section">
+            <h2>🔐 Change Admin Password</h2>
+            <form method="POST">
+                <div class="settings-grid">
+                    <div class="form-group">
+                        <label>Current Password</label>
+                        <input type="password" name="current_password" required>
+                        <small>Enter your current password</small>
+                    </div>
+                    <div class="form-group">
+                        <label>New Password</label>
+                        <input type="password" name="new_password" required minlength="6">
+                        <small>Minimum 6 characters</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Confirm New Password</label>
+                        <input type="password" name="confirm_password" required minlength="6">
+                        <small>Re-enter new password</small>
+                    </div>
+                </div>
+                <button type="submit" name="change_password" class="save-btn">🔒 Change Password</button>
+            </form>
+        </div>
 
         <form method="POST">
             <div class="section">
@@ -225,12 +307,27 @@ $currentSettings = [
                     <div class="form-group">
                         <label>Store Name</label>
                         <input type="text" name="store_name" value="<?= htmlspecialchars($currentSettings['store_name']) ?>" required>
-                        <small>Name of your store/business</small>
+                        <small>Name of your store/business (shown to customers)</small>
                     </div>
                     <div class="form-group">
                         <label>Store Location</label>
                         <input type="text" name="store_location" value="<?= htmlspecialchars($currentSettings['store_location']) ?>">
-                        <small>Physical location or city</small>
+                        <small>Physical address or city (e.g., Kfarhbab, Ghazir, Lebanon)</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Store Phone</label>
+                        <input type="text" name="store_phone" value="<?= htmlspecialchars($currentSettings['store_phone']) ?>" placeholder="+961 9 123456">
+                        <small>Main phone number (shown to customers)</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Store Website</label>
+                        <input type="url" name="store_website" value="<?= htmlspecialchars($currentSettings['store_website']) ?>" placeholder="https://example.com">
+                        <small>Your website URL (optional)</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Business Hours</label>
+                        <input type="text" name="store_hours" value="<?= htmlspecialchars($currentSettings['store_hours']) ?>" placeholder="Monday-Saturday 9:00 AM - 7:00 PM">
+                        <small>Opening hours (shown to customers)</small>
                     </div>
                     <div class="form-group">
                         <label>Timezone</label>

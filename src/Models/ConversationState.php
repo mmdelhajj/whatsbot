@@ -11,6 +11,8 @@ class ConversationState {
     const STATE_IDLE = 'idle';
     const STATE_BROWSING_PRODUCTS = 'browsing_products';
     const STATE_AWAITING_PRODUCT_SELECTION = 'awaiting_product_selection';
+    const STATE_CONFIRMING_PRODUCT = 'confirming_product';
+    const STATE_AWAITING_QUANTITY = 'awaiting_quantity';
     const STATE_AWAITING_NAME = 'awaiting_name';
     const STATE_AWAITING_EMAIL = 'awaiting_email';
     const STATE_AWAITING_ADDRESS = 'awaiting_address';
@@ -27,11 +29,11 @@ class ConversationState {
     public function get($customerId) {
         // Clean up expired states first
         $this->db->query(
-            "DELETE FROM conversation_context WHERE expires_at < NOW()"
+            "DELETE FROM conversation_state WHERE expires_at < NOW()"
         );
 
         $context = $this->db->fetchOne(
-            "SELECT * FROM conversation_context
+            "SELECT * FROM conversation_state
              WHERE customer_id = ? AND expires_at > NOW()
              ORDER BY updated_at DESC
              LIMIT 1",
@@ -63,7 +65,7 @@ class ConversationState {
 
         if (isset($existing['id'])) {
             // Update existing
-            $this->db->update('conversation_context', [
+            $this->db->update('conversation_state', [
                 'last_intent' => $state,
                 'context_data' => json_encode($mergedData),
                 'expires_at' => $expiresAt
@@ -72,7 +74,7 @@ class ConversationState {
             return $existing['id'];
         } else {
             // Create new
-            return $this->db->insert('conversation_context', [
+            return $this->db->insert('conversation_state', [
                 'customer_id' => $customerId,
                 'last_intent' => $state,
                 'context_data' => json_encode($mergedData),
@@ -87,7 +89,7 @@ class ConversationState {
      */
     public function clear($customerId) {
         $this->db->query(
-            "DELETE FROM conversation_context WHERE customer_id = ?",
+            "DELETE FROM conversation_state WHERE customer_id = ?",
             [$customerId]
         );
     }

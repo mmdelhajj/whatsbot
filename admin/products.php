@@ -14,11 +14,35 @@ if (!isset($_SESSION['admin_logged_in']) || !$_SESSION['admin_logged_in']) {
 
 $db = Database::getInstance();
 
-// Get all products
+// Search functionality
+$searchTerm = isset($_GET['search']) ? trim($_GET['search']) : '';
+
+// Pagination settings
+$itemsPerPage = 20;
+$currentPage = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$currentPage = max(1, $currentPage); // Ensure page is at least 1
+$offset = ($currentPage - 1) * $itemsPerPage;
+
+// Build SQL query with optional search
+$whereClause = '';
+$params = [];
+if (!empty($searchTerm)) {
+    $whereClause = "WHERE item_name LIKE ? OR item_code LIKE ? OR category LIKE ?";
+    $searchParam = "%{$searchTerm}%";
+    $params = [$searchParam, $searchParam, $searchParam];
+}
+
+// Get total count
+$totalProducts = $db->fetchOne("SELECT COUNT(*) as count FROM product_info {$whereClause}", $params)['count'];
+$totalPages = ceil($totalProducts / $itemsPerPage);
+
+// Get products for current page
 $products = $db->fetchAll("
     SELECT * FROM product_info
+    {$whereClause}
     ORDER BY item_name ASC
-");
+    LIMIT ? OFFSET ?
+", array_merge($params, [$itemsPerPage, $offset]));
 
 // Get statistics
 $stats = $db->fetchOne("
@@ -60,6 +84,23 @@ $stats = $db->fetchOne("
         .badge-in-stock { background: #d1fae5; color: #059669; }
         .badge-low-stock { background: #fef3c7; color: #d97706; }
         .badge-out-of-stock { background: #fee2e2; color: #dc2626; }
+        .product-img { width: 50px; height: 50px; object-fit: cover; border-radius: 6px; border: 1px solid #e5e7eb; }
+        .no-img { width: 50px; height: 50px; background: #f3f4f6; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 0.75em; border: 1px solid #e5e7eb; }
+        .pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding: 20px 0; border-top: 1px solid #e5e7eb; }
+        .pagination-info { color: #6b7280; font-size: 0.9em; }
+        .pagination-buttons { display: flex; gap: 10px; }
+        .pagination-btn { padding: 8px 16px; border-radius: 6px; text-decoration: none; font-weight: 500; transition: all 0.3s; }
+        .pagination-btn.prev, .pagination-btn.next { background: #667eea; color: white; }
+        .pagination-btn.prev:hover, .pagination-btn.next:hover { background: #5568d3; }
+        .pagination-btn.disabled { background: #e5e7eb; color: #9ca3af; pointer-events: none; }
+        .search-box { margin-bottom: 20px; }
+        .search-form { display: flex; gap: 10px; align-items: center; }
+        .search-input { flex: 1; max-width: 400px; padding: 10px 15px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.95em; }
+        .search-input:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+        .search-btn { padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 6px; font-weight: 500; cursor: pointer; transition: all 0.3s; }
+        .search-btn:hover { background: #5568d3; }
+        .clear-btn { padding: 10px 15px; background: #6b7280; color: white; border: none; border-radius: 6px; font-weight: 500; cursor: pointer; text-decoration: none; display: inline-block; transition: all 0.3s; }
+        .clear-btn:hover { background: #4b5563; }
     </style>
 </head>
 <body>
@@ -77,8 +118,8 @@ $stats = $db->fetchOne("
             <a href="/admin/messages.php">Messages</a>
             <a href="/admin/orders.php">Orders</a>
             <a href="/admin/products.php" class="active">Products</a>
-            <a href="/admin/sync.php">Sync Products</a>
-            <a href="/admin/sync-customers.php">Sync Customers</a>
+            
+            
             <a href="/admin/import-customers.php">Import Customers</a>
             <a href="/admin/settings.php">Settings</a>
             <a href="/admin/test-apis.php">API Tests</a>
@@ -107,12 +148,29 @@ $stats = $db->fetchOne("
 
         <div class="section">
             <h2>All Products</h2>
+
+            <!-- Search Box -->
+            <div class="search-box">
+                <form method="GET" action="" class="search-form">
+                    <input type="text"
+                           name="search"
+                           class="search-input"
+                           placeholder="Search by product name, code, or category..."
+                           value="<?= htmlspecialchars($searchTerm) ?>">
+                    <button type="submit" class="search-btn">Search</button>
+                    <?php if (!empty($searchTerm)): ?>
+                        <a href="?" class="clear-btn">Clear</a>
+                    <?php endif; ?>
+                </form>
+            </div>
+
             <?php if (empty($products)): ?>
-                <p>No products found. Run a sync to import products from Brains API.</p>
+                <p>No products found<?= !empty($searchTerm) ? ' matching your search' : '. Run a sync to import products from Brains API' ?>.</p>
             <?php else: ?>
                 <table>
                     <thead>
                         <tr>
+                            <th>Image</th>
                             <th>Code</th>
                             <th>Name</th>
                             <th>Category</th>
@@ -129,6 +187,17 @@ $stats = $db->fetchOne("
                             $stockText = $stock > 10 ? 'In Stock' : ($stock > 0 ? 'Low Stock' : 'Out of Stock');
                         ?>
                         <tr>
+                            <td>
+                                <?php if (!empty($product['image_url'])): ?>
+                                    <img src="<?= htmlspecialchars($product['image_url']) ?>"
+                                         alt="<?= htmlspecialchars($product['item_name']) ?>"
+                                         class="product-img"
+                                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                    <div class="no-img" style="display:none;">No Image</div>
+                                <?php else: ?>
+                                    <div class="no-img">No Image</div>
+                                <?php endif; ?>
+                            </td>
                             <td><?= htmlspecialchars($product['item_code']) ?></td>
                             <td><?= htmlspecialchars($product['item_name']) ?></td>
                             <td><?= htmlspecialchars($product['category'] ?? 'N/A') ?></td>
@@ -139,6 +208,35 @@ $stats = $db->fetchOne("
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+            <?php endif; ?>
+
+            <?php if ($totalPages > 1): ?>
+            <div class="pagination">
+                <div class="pagination-info">
+                    Showing <?= ($offset + 1) ?> - <?= min($offset + $itemsPerPage, $totalProducts) ?> of <?= number_format($totalProducts) ?> products<?= !empty($searchTerm) ? ' (filtered)' : '' ?> (Page <?= $currentPage ?> of <?= $totalPages ?>)
+                </div>
+                <div class="pagination-buttons">
+                    <?php
+                    $prevUrl = "?page=" . ($currentPage - 1);
+                    $nextUrl = "?page=" . ($currentPage + 1);
+                    if (!empty($searchTerm)) {
+                        $prevUrl .= "&search=" . urlencode($searchTerm);
+                        $nextUrl .= "&search=" . urlencode($searchTerm);
+                    }
+                    ?>
+                    <?php if ($currentPage > 1): ?>
+                        <a href="<?= $prevUrl ?>" class="pagination-btn prev">← Previous</a>
+                    <?php else: ?>
+                        <span class="pagination-btn disabled">← Previous</span>
+                    <?php endif; ?>
+
+                    <?php if ($currentPage < $totalPages): ?>
+                        <a href="<?= $nextUrl ?>" class="pagination-btn next">Next →</a>
+                    <?php else: ?>
+                        <span class="pagination-btn disabled">Next →</span>
+                    <?php endif; ?>
+                </div>
+            </div>
             <?php endif; ?>
         </div>
     </div>

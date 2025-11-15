@@ -22,9 +22,9 @@ class ClaudeAI {
      */
     public function processMessage($customerId, $customerMessage, $customerData = []) {
         try {
-            // Get conversation context
+            // Get conversation context (reduced to 3 for faster responses)
             $messageModel = new Message();
-            $recentMessages = $messageModel->getRecentForContext($customerId, 5);
+            $recentMessages = $messageModel->getRecentForContext($customerId, 3);
 
             // Build system prompt
             $systemPrompt = $this->buildSystemPrompt($customerData);
@@ -141,22 +141,39 @@ class ClaudeAI {
      * Build system prompt for Claude
      */
     private function buildSystemPrompt($customerData) {
-        $prompt = "You are a helpful AI assistant for **" . STORE_NAME . "**, a bookstore in " . STORE_LOCATION . ".\n\n";
+        $prompt = "⚠️ CRITICAL INSTRUCTION - READ THIS FIRST ⚠️\n\n";
+        $prompt .= "You are NOT Claude. You are NOT an AI assistant created by Anthropic.\n";
+        $prompt .= "You are a customer service representative working for " . STORE_NAME . ".\n";
+        $prompt .= "NEVER EVER mention Anthropic, Claude, or being an AI assistant.\n";
+        $prompt .= "NEVER say you don't have products or services - you DO sell real products!\n\n";
 
-        $prompt .= "**Your Role:**\n";
-        $prompt .= "- Help customers find books and educational materials\n";
-        $prompt .= "- Provide product information, prices, and availability\n";
-        $prompt .= "- Assist with placing orders\n";
-        $prompt .= "- Check account balances and credit limits\n";
-        $prompt .= "- Answer questions in a friendly, professional manner\n\n";
+        $prompt .= "=== YOUR ACTUAL IDENTITY ===\n";
+        $prompt .= "You are: The WhatsApp assistant for " . STORE_NAME . "\n";
+        $prompt .= "You work at: " . STORE_LOCATION . "\n";
+        $prompt .= "Your job: Help customers buy books, stationery, and educational materials\n\n";
 
-        $prompt .= "**Important Guidelines:**\n";
-        $prompt .= "- Respond in the customer's language (Arabic, English, or French)\n";
-        $prompt .= "- Be concise and clear (max 2-3 sentences unless asked for details)\n";
-        $prompt .= "- Use emojis to make messages friendly 😊\n";
-        $prompt .= "- For prices, use format: XX,XXX " . CURRENCY . "\n";
-        $prompt .= "- If you don't know something, be honest and offer to check\n";
-        $prompt .= "- Guide customers naturally to find what they need\n\n";
+        $prompt .= "=== STORE INFORMATION (MEMORIZE THIS) ===\n";
+        $prompt .= "Store Name: " . STORE_NAME . "\n";
+        $prompt .= "Location: " . STORE_LOCATION . "\n";
+        $prompt .= "Phone: " . STORE_PHONE . "\n";
+        if (!empty(STORE_WEBSITE)) {
+            $prompt .= "Website: " . STORE_WEBSITE . " (YES, we HAVE a website!)\n";
+        }
+        $prompt .= "Hours: " . STORE_HOURS . "\n";
+        $prompt .= "Products: Books, stationery, educational materials, toys, office supplies\n";
+        $prompt .= "Contact: WhatsApp (this chat), Phone: " . STORE_PHONE . "\n\n";
+
+        $prompt .= "=== HOW TO ANSWER COMMON QUESTIONS ===\n";
+        $prompt .= "Q: 'What's your website?' → A: 'Our website is " . STORE_WEBSITE . " 🌐'\n";
+        $prompt .= "Q: 'Who are you?' → A: 'I'm the WhatsApp assistant for " . STORE_NAME . " 😊'\n";
+        $prompt .= "Q: 'Do you have a store?' → A: 'Yes! We're located in " . STORE_LOCATION . " 📍'\n";
+        $prompt .= "Q: 'What do you sell?' → A: 'We sell books, stationery, educational materials, and more! 📚'\n\n";
+
+        $prompt .= "=== RESPONSE RULES ===\n";
+        $prompt .= "- Respond in customer's language (Arabic/English/French)\n";
+        $prompt .= "- Be VERY brief (1-2 sentences max)\n";
+        $prompt .= "- Use emojis 😊\n";
+        $prompt .= "- Prices: XX,XXX " . CURRENCY . "\n\n";
 
         // Add customer context if available
         if (!empty($customerData['name'])) {
@@ -171,16 +188,7 @@ class ClaudeAI {
                 $prompt .= "- Credit Limit: " . number_format($customerData['credit_limit'], 0, '.', ',') . " " . CURRENCY . "\n";
             }
 
-            $prompt .= "\n";
         }
-
-        $prompt .= "**Common Scenarios:**\n";
-        $prompt .= "1. Product Search: When customer asks about a book, guide them to provide specific names or codes\n";
-        $prompt .= "2. Ordering: Confirm product details before creating order\n";
-        $prompt .= "3. Account Inquiry: Provide balance and credit info clearly\n";
-        $prompt .= "4. General Questions: Answer helpfully about store, location, hours, etc.\n\n";
-
-        $prompt .= "Be warm, helpful, and efficient! 🌟";
 
         return $prompt;
     }
@@ -232,6 +240,9 @@ class ClaudeAI {
             'anthropic-version: 2023-06-01'
         ]);
 
+        // Log request for debugging
+        logMessage("Claude API Request to: {$this->apiUrl}", 'DEBUG');
+
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
@@ -247,9 +258,18 @@ class ClaudeAI {
 
         if ($httpCode !== 200) {
             logMessage("Claude API HTTP {$httpCode}: {$response}", 'ERROR');
+
+            // Try to decode error response
+            $errorData = json_decode($response, true);
+            $errorMsg = "HTTP Error {$httpCode}";
+            if ($errorData && isset($errorData['error']['message'])) {
+                $errorMsg .= ": " . $errorData['error']['message'];
+            }
+
             return [
                 'success' => false,
-                'error' => "HTTP Error {$httpCode}"
+                'error' => $errorMsg,
+                'raw_response' => $response
             ];
         }
 
@@ -332,6 +352,464 @@ class ClaudeAI {
         $message .= "لطلب أي منتج، اكتب رقمه أو اسمه.";
 
         return $message;
+    }
+
+    /**
+     * Analyze image and search for matching products
+     */
+    public function analyzeImageAndSearch($imageUrl, $lang = 'en') {
+        try {
+            logMessage("Starting image analysis for URL: $imageUrl", 'INFO');
+
+            // Download image and convert to base64 (Claude requires HTTPS or base64)
+            $imageData = @file_get_contents($imageUrl);
+
+            if ($imageData === false) {
+                logMessage("Failed to download image from URL: $imageUrl", 'ERROR');
+                return [
+                    'success' => false,
+                    'error' => 'Failed to download image'
+                ];
+            }
+
+            // Get image MIME type
+            $finfo = new finfo(FILEINFO_MIME_TYPE);
+            $mimeType = $finfo->buffer($imageData);
+
+            // Convert to base64
+            $base64Image = base64_encode($imageData);
+            logMessage("Image downloaded and encoded. MIME type: $mimeType, Size: " . strlen($imageData) . " bytes", 'INFO');
+
+            // Map MIME type to Claude's media_type
+            $mediaTypeMap = [
+                'image/jpeg' => 'image/jpeg',
+                'image/jpg' => 'image/jpeg',
+                'image/png' => 'image/png',
+                'image/gif' => 'image/gif',
+                'image/webp' => 'image/webp'
+            ];
+
+            $mediaType = $mediaTypeMap[$mimeType] ?? 'image/jpeg';
+
+            // Use Claude's vision API to analyze the image
+            $systemPrompt = "You are a product recognition assistant for a bookstore and stationery shop in Lebanon. When you see text in the image (especially Arabic, French, or English), extract it EXACTLY as written. Then identify what product it is.";
+
+            $messages = [
+                [
+                    'role' => 'user',
+                    'content' => [
+                        [
+                            'type' => 'image',
+                            'source' => [
+                                'type' => 'base64',
+                                'media_type' => $mediaType,
+                                'data' => $base64Image
+                            ]
+                        ],
+                        [
+                            'type' => 'text',
+                            'text' => 'IMPORTANT: If you see ANY text on the product (titles, labels, brand names), write the EXACT text you see in its original language (Arabic عربي, French, or English).
+
+Then describe:
+1. Product type (book, pen, notebook, etc.)
+2. Any visible attributes (color, size, material)
+3. Brand name if visible
+
+Format:
+TEXT ON PRODUCT: [exact text you see]
+PRODUCT TYPE: [what it is]
+DESCRIPTION: [brief description]'
+                        ]
+                    ]
+                ]
+            ];
+
+            $response = $this->callClaudeAPI($systemPrompt, $messages);
+
+            if (!$response['success']) {
+                logMessage("Claude API error: " . ($response['error'] ?? 'Unknown'), 'ERROR');
+                return [
+                    'success' => false,
+                    'error' => $response['error']
+                ];
+            }
+
+            $description = $response['message'];
+            logMessage("Image analyzed: {$description}", 'INFO');
+
+            // Extract exact text from "TEXT ON PRODUCT:" if present
+            $exactText = '';
+            if (preg_match('/TEXT ON PRODUCT:\s*(.+?)(?:\n|$)/i', $description, $matches)) {
+                $exactText = trim($matches[1]);
+                logMessage("Exact text extracted from image: {$exactText}", 'INFO');
+            }
+
+            // Extract attributes (colors, materials, types)
+            $attributes = $this->extractAttributes($description);
+            logMessage("Extracted attributes: " . json_encode($attributes), 'INFO');
+
+            // Extract keywords first (this filters out "image", "shows", etc.)
+            $keywords = $this->extractKeywords($description);
+            logMessage("Extracted keywords: " . implode(', ', $keywords), 'INFO');
+
+            // Search for products using keywords
+            $productModel = new Product();
+            $products = [];
+
+            // FIRST: Try searching with exact text (if we extracted it)
+            if (!empty($exactText)) {
+                logMessage("Searching for exact text: {$exactText}", 'INFO');
+                logMessage("========== STARTING TEXT NORMALIZATION BLOCK ==========", 'INFO');
+
+                // Normalize exact text (remove accents)
+                $normalizedExact = $this->normalizeText($exactText);
+                logMessage("Normalized exact text: {$normalizedExact}", 'INFO');
+
+                // Extract meaningful words from normalized text
+                $exactWords = preg_split('/\s+/', $normalizedExact);
+                $meaningfulWords = [];
+                $stopWords = ['de', 'du', 'la', 'le', 'les', 'et', 'the', 'a', 'an', 'and', 'or', 'of', 'in'];
+
+                foreach ($exactWords as $word) {
+                    $word = preg_replace('/[^a-z0-9\x{0600}-\x{06FF}]/ui', '', $word);
+                    if (mb_strlen($word) >= 3 && !in_array($word, $stopWords)) {
+                        $meaningfulWords[] = $word;
+                    }
+                }
+
+                logMessage("Meaningful words extracted: " . implode(', ', $meaningfulWords), 'INFO');
+
+                // Search for products containing multiple meaningful words
+                if (!empty($meaningfulWords)) {
+                    // Try first meaningful word
+                    $allResults = $productModel->search($meaningfulWords[0], 200);
+                    logMessage("Searching with first word '{$meaningfulWords[0]}': found " . count($allResults) . " results", 'INFO');
+
+                    // Filter to products containing multiple meaningful words
+                    foreach ($allResults as $product) {
+                        $productNameNormalized = $this->normalizeText($product['item_name']);
+                        $matchCount = 0;
+                        $matchedWords = [];
+
+                        foreach ($meaningfulWords as $word) {
+                            if (stripos($productNameNormalized, $word) !== false) {
+                                $matchCount++;
+                                $matchedWords[] = $word;
+                            }
+                        }
+
+                        // Keep products that match at least 2 words (or 1 if only 1-2 total words)
+                        $requiredMatches = count($meaningfulWords) >= 3 ? 2 : 1;
+                        if ($matchCount >= $requiredMatches) {
+                            $product['match_score'] = $matchCount;
+                            $product['matched_words'] = implode(', ', $matchedWords);
+                            $products[] = $product;
+                        }
+                    }
+
+                    if (!empty($products)) {
+                        // Sort by match score
+                        usort($products, function($a, $b) {
+                            return ($b['match_score'] ?? 0) - ($a['match_score'] ?? 0);
+                        });
+
+                        logMessage("Found " . count($products) . " products matching words from exact text (top match: {$products[0]['item_name']})", 'INFO');
+                    } else {
+                        logMessage("No products matched multiple words, will try keywords", 'INFO');
+                    }
+                }
+            }
+
+            // If exact text didn't work, try each keyword
+            if (empty($products)) {
+                foreach ($keywords as $keyword) {
+                    $products = $productModel->search($keyword, 100);
+                    if (!empty($products)) {
+                        logMessage("Found " . count($products) . " products with keyword: $keyword", 'INFO');
+
+                        // ALWAYS filter by attributes (to exclude labels, holders, etc.)
+                        $filteredProducts = $this->filterByAttributes($products, $attributes);
+                        if (!empty($filteredProducts)) {
+                            logMessage("Filtered to " . count($filteredProducts) . " products after exclusions", 'INFO');
+                            $products = $filteredProducts;
+                        }
+
+                        break;
+                    }
+                }
+            }
+
+            // If still no results, try the full description as last resort
+            if (empty($products)) {
+                logMessage("No keyword matches, trying full description", 'INFO');
+                $products = $productModel->search($description, 10);
+            }
+
+            // Limit to 50 products
+            $products = array_slice($products, 0, 50);
+            logMessage("Final result: " . count($products) . " products found", 'INFO');
+
+            return [
+                'success' => true,
+                'description' => $description,
+                'products' => $products
+            ];
+
+        } catch (Exception $e) {
+            logMessage("Image analysis error: " . $e->getMessage(), 'ERROR');
+            return [
+                'success' => false,
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Extract attributes like colors, materials, types from description
+     */
+    private function extractAttributes($text) {
+        $textLower = strtolower($text);
+
+        $attributes = [
+            'colors' => [],
+            'materials' => [],
+            'types' => []
+        ];
+
+        // Common colors
+        $colors = [
+            'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'pink', 'black',
+            'white', 'brown', 'gray', 'grey', 'gold', 'silver', 'bronze', 'violet',
+            'cyan', 'magenta', 'turquoise', 'navy', 'maroon', 'beige', 'cream',
+            'rouge', 'bleu', 'vert', 'jaune', 'orange', 'rose', 'noir', 'blanc',
+            'أحمر', 'أزرق', 'أخضر', 'أصفر', 'برتقالي', 'وردي', 'أسود', 'أبيض'
+        ];
+
+        // Common materials
+        $materials = [
+            'plastic', 'metal', 'wood', 'wooden', 'paper', 'cardboard', 'leather',
+            'fabric', 'cotton', 'polyester', 'rubber', 'silicon', 'glass', 'ceramic',
+            'transparent', 'clear', 'plast', 'métal', 'bois', 'papier', 'cuir'
+        ];
+
+        // Product types
+        $types = [
+            'ballpoint', 'gel', 'fountain', 'mechanical', 'automatic', 'erasable',
+            'refillable', 'retractable', 'clickable', 'twist'
+        ];
+
+        // Extract colors
+        foreach ($colors as $color) {
+            if (preg_match('/\b' . preg_quote($color, '/') . '\b/ui', $textLower)) {
+                $attributes['colors'][] = $color;
+            }
+        }
+
+        // Extract materials
+        foreach ($materials as $material) {
+            if (preg_match('/\b' . preg_quote($material, '/') . '\b/i', $textLower)) {
+                $attributes['materials'][] = $material;
+            }
+        }
+
+        // Extract types
+        foreach ($types as $type) {
+            if (preg_match('/\b' . preg_quote($type, '/') . '\b/i', $textLower)) {
+                $attributes['types'][] = $type;
+            }
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * Filter products by attributes (colors, materials)
+     */
+    private function filterByAttributes($products, $attributes) {
+        // Exclusion keywords - products to SKIP when they appear with main product name
+        $exclusions = [
+            'holder', 'case', 'box', 'container', 'organizer', 'stand', 'rack',
+            'support', 'tray', 'storage', 'pouch', 'sleeve',
+            'label', 'labels', 'sticker', 'stickers', 'clear book', 'clearbook',
+            'cover', 'protector', 'wrapper', 'bag', 'pocket', 'file', 'folder',
+            // Non-stationery items
+            'pump', 'intex', 'pool', 'inflatable', 'mattress', 'floatie', 'swim',
+            'ball', 'toy gun', 'water gun', 'spray', 'hose'
+        ];
+
+        $filtered = [];
+
+        foreach ($products as $product) {
+            $productName = strtolower($product['item_name']);
+
+            // SKIP if product name contains exclusion keywords
+            $shouldExclude = false;
+            foreach ($exclusions as $exclude) {
+                if (stripos($productName, $exclude) !== false) {
+                    $shouldExclude = true;
+                    break;
+                }
+            }
+
+            if ($shouldExclude) {
+                continue; // Skip this product
+            }
+
+            $score = 0;
+
+            // Check colors
+            foreach ($attributes['colors'] as $color) {
+                if (stripos($productName, $color) !== false) {
+                    $score += 10; // High priority for color match
+                }
+            }
+
+            // Check materials
+            foreach ($attributes['materials'] as $material) {
+                if (stripos($productName, $material) !== false) {
+                    $score += 5;
+                }
+            }
+
+            // Check types
+            foreach ($attributes['types'] as $type) {
+                if (stripos($productName, $type) !== false) {
+                    $score += 3;
+                }
+            }
+
+            // Add to filtered list if has any matching attributes
+            if ($score > 0) {
+                $product['match_score'] = $score;
+                $filtered[] = $product;
+            }
+        }
+
+        // Sort by score (highest first)
+        usort($filtered, function($a, $b) {
+            return ($b['match_score'] ?? 0) - ($a['match_score'] ?? 0);
+        });
+
+        // If we got good matches, return them. Otherwise return all products (excluding holders)
+        if (!empty($filtered)) {
+            return $filtered;
+        }
+
+        // Return products without exclusions
+        $nonExcluded = [];
+        foreach ($products as $product) {
+            $productName = strtolower($product['item_name']);
+            $shouldExclude = false;
+            foreach ($exclusions as $exclude) {
+                if (stripos($productName, $exclude) !== false) {
+                    $shouldExclude = true;
+                    break;
+                }
+            }
+            if (!$shouldExclude) {
+                $nonExcluded[] = $product;
+            }
+        }
+
+        return !empty($nonExcluded) ? $nonExcluded : $products;
+    }
+
+    /**
+     * Normalize text for better matching (remove accents, lowercase, etc.)
+     */
+    private function normalizeText($text) {
+        // Convert to lowercase
+        $text = mb_strtolower($text, 'UTF-8');
+
+        // Remove French/Spanish accents
+        $accents = [
+            'à' => 'a', 'á' => 'a', 'â' => 'a', 'ã' => 'a', 'ä' => 'a', 'å' => 'a',
+            'è' => 'e', 'é' => 'e', 'ê' => 'e', 'ë' => 'e',
+            'ì' => 'i', 'í' => 'i', 'î' => 'i', 'ï' => 'i',
+            'ò' => 'o', 'ó' => 'o', 'ô' => 'o', 'õ' => 'o', 'ö' => 'o',
+            'ù' => 'u', 'ú' => 'u', 'û' => 'u', 'ü' => 'u',
+            'ç' => 'c', 'ñ' => 'n',
+            'À' => 'A', 'Á' => 'A', 'Â' => 'A', 'Ã' => 'A', 'Ä' => 'A', 'Å' => 'A',
+            'È' => 'E', 'É' => 'E', 'Ê' => 'E', 'Ë' => 'E',
+            'Ì' => 'I', 'Í' => 'I', 'Î' => 'I', 'Ï' => 'I',
+            'Ò' => 'O', 'Ó' => 'O', 'Ô' => 'O', 'Õ' => 'O', 'Ö' => 'O',
+            'Ù' => 'U', 'Ú' => 'U', 'Û' => 'U', 'Ü' => 'U',
+            'Ç' => 'C', 'Ñ' => 'N'
+        ];
+
+        $text = strtr($text, $accents);
+
+        return $text;
+    }
+
+    /**
+     * Extract keywords from description - SMART VERSION
+     * Only extracts actual product-related keywords
+     */
+    private function extractKeywords($text) {
+        // Comprehensive list of words to ignore
+        $stopWords = [
+            // Common words
+            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with',
+            'is', 'are', 'was', 'were', 'this', 'that', 'these', 'those', 'from', 'by',
+            // Image/description words
+            'image', 'shows', 'depicts', 'features', 'picture', 'photo', 'photograph',
+            'displayed', 'shown', 'includes', 'contains', 'has', 'have', 'also', 'comes',
+            'packaging', 'branding', 'showcases', 'setting', 'depicted', 'visible',
+            // Physical attributes (unless product-specific)
+            'wearing', 'styled', 'design', 'pattern', 'featuring', 'vibrant', 'long',
+            'decorated', 'color', 'scheme', 'accents', 'sparkly', 'ruffled',
+            // Generic descriptors
+            'holiday', 'collection', 'signature', 'line', 'edition', 'series'
+        ];
+
+        // Product type keywords (prioritize these!)
+        $productTypes = [
+            'barbie', 'doll', 'book', 'pen', 'pencil', 'notebook', 'ruler', 'eraser',
+            'backpack', 'bag', 'toy', 'game', 'puzzle', 'sticker', 'coloring',
+            'crayon', 'marker', 'paint', 'brush', 'glue', 'scissors', 'calculator',
+            'compass', 'protractor', 'folder', 'binder', 'paper', 'card', 'poster',
+            'album', 'diary', 'planner', 'calendar', 'agenda', 'atlas', 'dictionary',
+            'novel', 'comic', 'magazine', 'workbook', 'textbook', 'guide', 'manual',
+            'mattel', 'lego', 'disney', 'marvel', 'hasbro', 'crayola', 'staedtler'
+        ];
+
+        $priorityKeywords = [];
+
+        // Extract capitalized words (likely brand names)
+        if (preg_match_all('/\b([A-Z][a-z]{2,})\b/', $text, $matches)) {
+            foreach ($matches[1] as $brand) {
+                $brandLower = strtolower($brand);
+                // Only add if it's a product type OR not a stopword
+                if (in_array($brandLower, $productTypes) || !in_array($brandLower, $stopWords)) {
+                    $priorityKeywords[] = $brandLower;
+                }
+            }
+        }
+
+        // Extract all words and check if they're product types
+        $words = preg_split('/\s+/', strtolower($text));
+        $keywords = [];
+
+        foreach ($words as $word) {
+            $word = preg_replace('/[^a-z]/', '', $word); // Remove numbers entirely
+
+            // Only add if:
+            // 1. It's in our product types list (HIGHEST PRIORITY)
+            // 2. OR it's not a stopword, not numeric, and length > 3
+            if (in_array($word, $productTypes)) {
+                // Product type found - add to priority!
+                array_unshift($priorityKeywords, $word);
+            } elseif (strlen($word) > 3 && !in_array($word, $stopWords) && !is_numeric($word)) {
+                $keywords[] = $word;
+            }
+        }
+
+        // Combine: product types first, then brand names, then other keywords
+        $allKeywords = array_merge(array_unique($priorityKeywords), $keywords);
+
+        // Remove duplicates and limit to top 5 keywords
+        return array_values(array_unique(array_slice($allKeywords, 0, 5)));
     }
 
     /**

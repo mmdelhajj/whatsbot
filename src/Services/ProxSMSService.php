@@ -19,7 +19,7 @@ class ProxSMSService {
     /**
      * Send text message to WhatsApp user
      */
-    public function sendMessage($phone, $message, $priority = 1) {
+    public function sendMessage($phone, $message, $priority = 2) {
         $data = [
             'secret' => $this->secret,
             'account' => $this->accountId,
@@ -40,9 +40,11 @@ class ProxSMSService {
             'secret' => $this->secret,
             'account' => $this->accountId,
             'recipient' => $this->normalizePhone($phone),
-            'type' => 'image',
-            'message' => $imageUrl,
-            'caption' => $caption
+            'type' => 'media',
+            'message' => $caption ?: 'Image',
+            'media_url' => $imageUrl,
+            'media_type' => 'image',
+            'priority' => 2
         ];
 
         return $this->makeRequest($data);
@@ -52,13 +54,25 @@ class ProxSMSService {
      * Send document/file
      */
     public function sendDocument($phone, $documentUrl, $filename = null) {
+        // Determine document type from filename or URL
+        $docType = 'pdf'; // default
+        if ($filename) {
+            $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+            if (in_array($ext, ['pdf', 'xml', 'xls', 'xlsx', 'doc', 'docx'])) {
+                $docType = $ext;
+            }
+        }
+
         $data = [
             'secret' => $this->secret,
             'account' => $this->accountId,
             'recipient' => $this->normalizePhone($phone),
             'type' => 'document',
-            'message' => $documentUrl,
-            'filename' => $filename
+            'message' => 'Document',
+            'document_url' => $documentUrl,
+            'document_name' => $filename ?: 'document.' . $docType,
+            'document_type' => $docType,
+            'priority' => 2
         ];
 
         return $this->makeRequest($data);

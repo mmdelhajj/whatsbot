@@ -1,28 +1,7 @@
 <?php
-require_once __DIR__ . '/../../config/config.php';
-session_start();
+// This file is included by index.php - do not handle login here
+// Login logic is in /admin/index.php
 
-// Handle login
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
-    $username = $_POST['username'] ?? '';
-    $password = $_POST['password'] ?? '';
-
-    // Check credentials (you should use a database for this)
-    if ($username === 'admin' && $password === 'admin123') {
-        $_SESSION['admin_logged_in'] = true;
-        $_SESSION['admin_username'] = $username;
-        header('Location: ../index.php');
-        exit;
-    } else {
-        $error = 'Invalid username or password';
-    }
-}
-
-// Redirect if already logged in
-if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in']) {
-    header('Location: ../index.php');
-    exit;
-}
 ?>
 <!DOCTYPE html>
 <html lang="en">

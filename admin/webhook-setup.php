@@ -70,7 +70,7 @@ if (file_exists($logFile)) {
             <a href="/admin/messages.php">Messages</a>
             <a href="/admin/orders.php">Orders</a>
             <a href="/admin/products.php">Products</a>
-            <a href="/admin/sync.php">Sync Products</a>
+            
             <a href="/admin/settings.php">Settings</a>
             <a href="/admin/webhook-setup.php" class="active">Webhook</a>
             <a href="/admin/test-apis.php">API Tests</a>

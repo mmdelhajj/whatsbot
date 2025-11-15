@@ -12,25 +12,36 @@ class Product {
     }
 
     /**
-     * Search products by name or code
+     * Search products by name or code (OPTIMIZED with fulltext)
      */
     public function search($query, $limit = 10) {
-        $searchTerm = "%{$query}%";
+        // For short queries or exact codes, use LIKE (faster for exact matches)
+        if (strlen($query) < 3 || preg_match('/^\d+$/', $query)) {
+            $searchTerm = "%{$query}%";
+            return $this->db->fetchAll(
+                "SELECT * FROM product_info
+                 WHERE item_code LIKE ? OR item_name LIKE ?
+                 ORDER BY
+                    CASE
+                        WHEN item_code = ? THEN 1
+                        WHEN item_name LIKE ? THEN 2
+                        ELSE 3
+                    END,
+                    item_name
+                 LIMIT ?",
+                [$searchTerm, $searchTerm, $query, $query . '%', $limit]
+            );
+        }
 
+        // For longer queries, use FULLTEXT search (much faster!)
         return $this->db->fetchAll(
-            "SELECT * FROM product_info
-             WHERE item_name LIKE ?
+            "SELECT *, MATCH(item_name, description) AGAINST(? IN NATURAL LANGUAGE MODE) as relevance
+             FROM product_info
+             WHERE MATCH(item_name, description) AGAINST(? IN NATURAL LANGUAGE MODE)
                 OR item_code LIKE ?
-                OR description LIKE ?
-             ORDER BY
-                CASE
-                    WHEN item_name LIKE ? THEN 1
-                    WHEN item_code LIKE ? THEN 2
-                    ELSE 3
-                END,
-                item_name
+             ORDER BY relevance DESC, item_name
              LIMIT ?",
-            [$searchTerm, $searchTerm, $searchTerm, $query . '%', $query . '%', $limit]
+            [$query, $query, "%{$query}%", $limit]
         );
     }
 

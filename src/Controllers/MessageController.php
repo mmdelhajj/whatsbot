@@ -61,8 +61,13 @@ class MessageController {
             $this->conversationState->updateData($customer['id'], ['language' => $lang]);
             $this->customerModel->update($customer['id'], ['preferred_language' => $lang]);
 
-            // Process message based on state
-            $response = $this->routeMessage($customer, $message, $lang, $state);
+            // If customer sent an image, analyze it first
+            if ($attachment && !empty($attachment)) {
+                $response = $this->handleImageMessage($customer['id'], $attachment, $lang);
+            } else {
+                // Process text message based on state
+                $response = $this->routeMessage($customer, $message, $lang, $state);
+            }
 
             // Send response
             if ($response) {
@@ -232,6 +237,12 @@ class MessageController {
             case ConversationState::STATE_AWAITING_PRODUCT_SELECTION:
                 return $this->handleProductSelection($customer['id'], $message, $lang);
 
+            case ConversationState::STATE_CONFIRMING_PRODUCT:
+                return $this->handleProductConfirmation($customer['id'], $message, $lang);
+
+            case ConversationState::STATE_AWAITING_QUANTITY:
+                return $this->handleQuantityInput($customer['id'], $message, $lang);
+
             case ConversationState::STATE_AWAITING_NAME:
                 return $this->handleNameInput($customer['id'], $message, $lang);
 
@@ -246,14 +257,20 @@ class MessageController {
 
             case ConversationState::STATE_IDLE:
             default:
-                // In idle state, try quick search first (FAST!)
+                // FIRST: Check if asking about store info (website, location, etc.) - answer directly!
+                $storeInfoResponse = $this->checkStoreInfoQuestions($message, $lang);
+                if ($storeInfoResponse !== null) {
+                    return $storeInfoResponse;
+                }
+
+                // SECOND: Try quick search (FAST!)
                 $searchResults = $this->quickProductSearch($customer['id'], $message, $lang);
 
                 if ($searchResults !== null) {
                     return $searchResults;
                 }
 
-                // No quick results? Use AI to understand and search intelligently
+                // THIRD: Use AI to understand and search intelligently
                 $aiSearch = $this->claudeAI->smartProductSearch($customer['id'], $message, $customer);
 
                 if ($aiSearch['success']) {
@@ -279,6 +296,67 @@ class MessageController {
                 // Last resort: general AI
                 return $this->handleWithAI($customer, $message, $lang);
         }
+    }
+
+    /**
+     * Check if customer is asking about store info (website, location, hours, etc.)
+     * Answer directly without using AI to prevent wrong responses
+     */
+    private function checkStoreInfoQuestions($message, $lang) {
+        $messageLower = mb_strtolower($message, 'UTF-8');
+
+        // Website questions
+        if (preg_match('/\b(website|site|موقع|موقعكم|موقع الكتروني|site web|votre site)\b/ui', $messageLower)) {
+            $responses = [
+                'ar' => "📱 موقعنا الإلكتروني: " . STORE_WEBSITE . "\n\nيمكنك زيارتنا على الموقع أو التواصل معنا هنا على الواتساب! 😊",
+                'en' => "🌐 Our website: " . STORE_WEBSITE . "\n\nYou can visit our website or chat with us here on WhatsApp! 😊",
+                'fr' => "🌐 Notre site web: " . STORE_WEBSITE . "\n\nVous pouvez visiter notre site ou nous contacter ici sur WhatsApp! 😊"
+            ];
+            return $responses[$lang] ?? $responses['en'];
+        }
+
+        // Location questions
+        if (preg_match('/\b(where|location|address|وين|أين|عنوان|موقع المحل|où|adresse|localisation)\b/ui', $messageLower)) {
+            $responses = [
+                'ar' => "📍 موقعنا: " . STORE_LOCATION . "\n\n📞 للتواصل: " . STORE_PHONE . "\n\nنحن هنا لخدمتك! 😊",
+                'en' => "📍 Our location: " . STORE_LOCATION . "\n\n📞 Phone: " . STORE_PHONE . "\n\nWe're here to help! 😊",
+                'fr' => "📍 Notre adresse: " . STORE_LOCATION . "\n\n📞 Téléphone: " . STORE_PHONE . "\n\nNous sommes là pour vous aider! 😊"
+            ];
+            return $responses[$lang] ?? $responses['en'];
+        }
+
+        // Hours/opening questions
+        if (preg_match('/\b(hours|open|opening|schedule|وقت|ساعات|متى|timing|horaires|ouvert|heures d\'ouverture)\b/ui', $messageLower)) {
+            $responses = [
+                'ar' => "🕐 أوقات العمل: " . STORE_HOURS . "\n\n📞 للاستفسار: " . STORE_PHONE . "\n\nأهلاً وسهلاً بك! 😊",
+                'en' => "🕐 Business hours: " . STORE_HOURS . "\n\n📞 Contact: " . STORE_PHONE . "\n\nWelcome! 😊",
+                'fr' => "🕐 Heures d'ouverture: " . STORE_HOURS . "\n\n📞 Contact: " . STORE_PHONE . "\n\nBienvenue! 😊"
+            ];
+            return $responses[$lang] ?? $responses['en'];
+        }
+
+        // Who are you / identity questions
+        if (preg_match('/\b(who are you|what are you|من أنت|مين أنت|شو إنت|qui êtes-vous|anthropic|claude)\b/ui', $messageLower)) {
+            $responses = [
+                'ar' => "👋 أنا مساعد الواتساب لـ " . STORE_NAME . "!\n\nأساعدك في إيجاد الكتب والقرطاسية وتقديم الطلبات. كيف يمكنني مساعدتك اليوم؟ 😊",
+                'en' => "👋 I'm the WhatsApp assistant for " . STORE_NAME . "!\n\nI help you find books, stationery, and place orders. How can I help you today? 😊",
+                'fr' => "👋 Je suis l'assistant WhatsApp de " . STORE_NAME . "!\n\nJe vous aide à trouver des livres, de la papeterie et à passer des commandes. Comment puis-je vous aider aujourd'hui? 😊"
+            ];
+            return $responses[$lang] ?? $responses['en'];
+        }
+
+        // Contact/phone questions
+        if (preg_match('/\b(phone|contact|call|رقم|هاتف|اتصال|téléphone|appeler|numéro)\b/ui', $messageLower)) {
+            $responses = [
+                'ar' => "📞 رقم الهاتف: " . STORE_PHONE . "\n📍 الموقع: " . STORE_LOCATION . "\n🌐 الموقع الإلكتروني: " . STORE_WEBSITE . "\n\nتواصل معنا بأي وقت! 😊",
+                'en' => "📞 Phone: " . STORE_PHONE . "\n📍 Location: " . STORE_LOCATION . "\n🌐 Website: " . STORE_WEBSITE . "\n\nContact us anytime! 😊",
+                'fr' => "📞 Téléphone: " . STORE_PHONE . "\n📍 Adresse: " . STORE_LOCATION . "\n🌐 Site web: " . STORE_WEBSITE . "\n\nContactez-nous à tout moment! 😊"
+            ];
+            return $responses[$lang] ?? $responses['en'];
+        }
+
+        // No store info question detected
+        return null;
     }
 
     /**
@@ -646,39 +724,54 @@ class MessageController {
 
         // Check for product number selection
         if (preg_match('/^\d+$/', trim($message))) {
+            logMessage("Product selection detected: $message", 'DEBUG');
             $selectedNum = (int)$message;
             $data = $this->conversationState->getData($customerId);
             $products = $data['products_on_page'] ?? [];
 
+            logMessage("Products on page: " . count($products), 'DEBUG');
+
             // Validate selection
             if ($selectedNum < 1 || $selectedNum > count($products)) {
+                logMessage("Invalid product selection: $selectedNum (max: " . count($products) . ")", 'DEBUG');
                 return ResponseTemplates::invalidInput($lang);
             }
 
             $selectedProduct = $products[$selectedNum - 1];
+            logMessage("Selected product: {$selectedProduct['item_name']}", 'DEBUG');
 
             // Check stock
             if ($selectedProduct['stock_quantity'] <= 0) {
+                logMessage("Product out of stock", 'DEBUG');
                 return ResponseTemplates::productNotAvailable($lang);
             }
 
-            // Check if customer already has complete information
+            // Get customer for phone number
             $customer = $this->customerModel->findById($customerId);
-            $hasCompleteInfo = !empty($customer['name']) &&
-                              !empty($customer['email']) &&
-                              !empty($customer['address']);
 
-            if ($hasCompleteInfo) {
-                // Customer has all info, create order directly
-                return $this->createOrderDirectly($customerId, $selectedProduct, $customer, $lang);
-            } else {
-                // Save selected product and ask for missing info
-                $this->conversationState->set($customerId, ConversationState::STATE_AWAITING_NAME, [
-                    'selected_product' => $selectedProduct
-                ]);
-
-                return ResponseTemplates::askName($lang, $selectedProduct['item_name']);
+            // Send product image if available
+            if (!empty($selectedProduct['image_url'])) {
+                try {
+                    logMessage("Sending product image: {$selectedProduct['image_url']}", 'DEBUG');
+                    $this->sendProductImage($customer['phone'], $selectedProduct, $lang, $customerId);
+                    logMessage("Product image sent successfully (outer)", 'DEBUG');
+                } catch (Exception $e) {
+                    logMessage("Error sending product image: " . $e->getMessage(), 'ERROR');
+                    // Continue anyway - don't fail the whole flow if image fails
+                }
             }
+
+            logMessage("After image sending block", 'DEBUG');
+
+            // Save selected product and ask for confirmation
+            logMessage("Setting state to CONFIRMING_PRODUCT", 'DEBUG');
+            $this->conversationState->set($customerId, ConversationState::STATE_CONFIRMING_PRODUCT, [
+                'selected_product' => $selectedProduct
+            ]);
+
+            $confirmMessage = ResponseTemplates::askProductConfirmation($lang, $selectedProduct['item_name']);
+            logMessage("Confirmation message: $confirmMessage", 'DEBUG');
+            return $confirmMessage;
         }
 
         // If it's not a number or "next", treat it as a new product search
@@ -690,6 +783,95 @@ class MessageController {
         }
 
         return ResponseTemplates::invalidInput($lang);
+    }
+
+    /**
+     * Handle product confirmation (when customer types "1" to confirm)
+     */
+    private function handleProductConfirmation($customerId, $message, $lang) {
+        $messageTrimmed = trim($message);
+
+        // Check if customer confirmed with "1"
+        if ($messageTrimmed === '1') {
+            // Get selected product from state
+            $data = $this->conversationState->getData($customerId);
+            $selectedProduct = $data['selected_product'] ?? null;
+
+            if (!$selectedProduct) {
+                return ResponseTemplates::invalidInput($lang);
+            }
+
+            // Move to quantity input state
+            $this->conversationState->set($customerId, ConversationState::STATE_AWAITING_QUANTITY, [
+                'selected_product' => $selectedProduct
+            ]);
+
+            return ResponseTemplates::askQuantity($lang, $selectedProduct['item_name']);
+        }
+
+        // If not "1", treat as new search
+        $searchResult = $this->quickProductSearch($customerId, $message, $lang);
+
+        if ($searchResult !== null) {
+            return $searchResult;
+        }
+
+        return ResponseTemplates::invalidInput($lang);
+    }
+
+    /**
+     * Handle quantity input
+     */
+    private function handleQuantityInput($customerId, $message, $lang) {
+        $quantity = (int)trim($message);
+
+        // Validate quantity
+        if ($quantity < 1 || $quantity > 1000) {
+            $messages = [
+                'ar' => "❌ الرجاء إدخال كمية صحيحة (من 1 إلى 1000)",
+                'en' => "❌ Please enter a valid quantity (1 to 1000)",
+                'fr' => "❌ Veuillez entrer une quantité valide (1 à 1000)"
+            ];
+            return $messages[$lang] ?? $messages['en'];
+        }
+
+        // Get selected product from state
+        $data = $this->conversationState->getData($customerId);
+        $selectedProduct = $data['selected_product'] ?? null;
+
+        if (!$selectedProduct) {
+            return ResponseTemplates::invalidInput($lang);
+        }
+
+        // Check if quantity is available in stock
+        if ($quantity > $selectedProduct['stock_quantity']) {
+            $available = $selectedProduct['stock_quantity'];
+            $messages = [
+                'ar' => "❌ عذراً، الكمية المتوفرة هي {$available} قطعة فقط.\n\nالرجاء إدخال كمية أقل.",
+                'en' => "❌ Sorry, only {$available} pieces available in stock.\n\nPlease enter a lower quantity.",
+                'fr' => "❌ Désolé, seulement {$available} pièces disponibles en stock.\n\nVeuillez entrer une quantité inférieure."
+            ];
+            return $messages[$lang] ?? $messages['en'];
+        }
+
+        // Save quantity and proceed with order flow
+        $this->conversationState->updateData($customerId, ['quantity' => $quantity]);
+
+        // Check if customer has complete information
+        $customer = $this->customerModel->findById($customerId);
+
+        if (!empty($customer['name']) && !empty($customer['email']) && !empty($customer['address'])) {
+            // Customer has all info, create order directly
+            return $this->createOrderDirectly($customerId, $selectedProduct, $customer, $lang);
+        } else {
+            // Need to collect customer information, start with name
+            $this->conversationState->set($customerId, ConversationState::STATE_AWAITING_NAME, [
+                'selected_product' => $selectedProduct,
+                'quantity' => $quantity
+            ]);
+
+            return ResponseTemplates::askName($lang, $selectedProduct['item_name']);
+        }
     }
 
     /**
@@ -744,6 +926,7 @@ class MessageController {
         $product = $data['selected_product'];
         $name = $data['customer_name'];
         $email = $data['customer_email'];
+        $quantity = $data['quantity'] ?? 1;
 
         // Update customer information
         $this->customerModel->update($customerId, [
@@ -758,7 +941,7 @@ class MessageController {
                 [
                     'product_sku' => $product['item_code'],
                     'product_name' => $product['item_name'],
-                    'quantity' => 1,
+                    'quantity' => $quantity,
                     'unit_price' => $product['price']
                 ]
             ], "WhatsApp Order - {$name}");
@@ -776,6 +959,7 @@ class MessageController {
                 'customer_name' => $name,
                 'customer_email' => $email,
                 'customer_address' => $address,
+                'quantity' => $quantity,
                 'price' => $product['price']
             ]);
 
@@ -790,13 +974,17 @@ class MessageController {
      * Create order directly when customer already has complete information
      */
     private function createOrderDirectly($customerId, $product, $customer, $lang) {
+        // Get quantity from conversation state
+        $data = $this->conversationState->getData($customerId);
+        $quantity = $data['quantity'] ?? 1;
+
         try {
             // Create order using existing customer information
             $order = $this->orderModel->create($customerId, [
                 [
                     'product_sku' => $product['item_code'],
                     'product_name' => $product['item_name'],
-                    'quantity' => 1,
+                    'quantity' => $quantity,
                     'unit_price' => $product['price']
                 ]
             ], "WhatsApp Order - {$customer['name']}");
@@ -813,6 +1001,7 @@ class MessageController {
                 'customer_name' => $customer['name'],
                 'customer_email' => $customer['email'],
                 'customer_address' => $customer['address'],
+                'quantity' => $quantity,
                 'price' => $product['price']
             ]);
 
@@ -1125,11 +1314,134 @@ class MessageController {
 
     /**
      * Convert Arabic numerals to Western numerals
-     * ٠١٢٣٤٥٦٧٨٩ → 0123456789
+     * ٠١٢٣٤٥٦٧٨٩ -> 0123456789
      */
     private function convertArabicNumerals($text) {
         $arabicNumerals = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
         $westernNumerals = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
         return str_replace($arabicNumerals, $westernNumerals, $text);
+    }
+
+    /**
+     * Send product image with details to customer
+     */
+    private function sendProductImage($phone, $product, $lang, $customerId) {
+        try {
+            logMessage("sendProductImage: Starting for product {$product['item_code']}", 'DEBUG');
+
+            // Build full image URL
+            $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+            $imageUrl = 'http://' . $host . $product['image_url'];
+            logMessage("sendProductImage: Image URL: $imageUrl", 'DEBUG');
+
+            // Create caption with product details
+            $price = number_format($product['price'], 0);
+            $stock = $product['stock_quantity'] > 0 ? '✅' : '❌';
+
+            $captions = [
+                'ar' => "*{$product['item_name']}*\n\n" .
+                        "💰 السعر: {$price} " . CURRENCY . "\n" .
+                        "📦 المخزون: {$stock}",
+                'en' => "*{$product['item_name']}*\n\n" .
+                        "💰 Price: {$price} " . CURRENCY . "\n" .
+                        "📦 Stock: {$stock}",
+                'fr' => "*{$product['item_name']}*\n\n" .
+                        "💰 Prix: {$price} " . CURRENCY . "\n" .
+                        "📦 Stock: {$stock}"
+            ];
+
+            $caption = $captions[$lang] ?? $captions['en'];
+            logMessage("sendProductImage: About to call ProxSMS sendImage", 'DEBUG');
+
+            // Send image with caption
+            $result = $this->proxSMS->sendImage($phone, $imageUrl, $caption);
+            logMessage("sendProductImage: ProxSMS returned", 'DEBUG');
+
+            if ($result['success']) {
+                logMessage("Product image sent successfully", 'INFO');
+                // Save sent message using customer ID directly
+                logMessage("About to save sent message for customer $customerId", 'DEBUG');
+                $this->messageModel->saveSent($customerId,
+                                              "[Image: {$product['item_name']}]",
+                                              $imageUrl);
+                logMessage("Message saved successfully", 'DEBUG');
+            } else {
+                logMessage("Failed to send product image: " . ($result['error'] ?? 'Unknown'), 'WARNING');
+            }
+
+            logMessage("sendProductImage: Exiting function", 'DEBUG');
+
+        } catch (Exception $e) {
+            logMessage("Error sending product image: " . $e->getMessage(), 'ERROR');
+        }
+
+        logMessage("sendProductImage: After catch block", 'DEBUG');
+    }
+
+    /**
+     * Handle customer image - analyze and search for matching products
+     */
+    private function handleImageMessage($customerId, $imageUrl, $lang) {
+        try {
+            // Use Claude AI to analyze the image
+            $result = $this->claudeAI->analyzeImageAndSearch($imageUrl, $lang);
+
+            if (!$result['success']) {
+                // If image analysis fails, return friendly message
+                $messages = [
+                    'ar' => "شكراً على الصورة! 📸\n\nعذراً، لم أتمكن من تحليل الصورة. يرجى إرسال اسم المنتج أو اكتب *منتجات* لرؤية القائمة.",
+                    'en' => "Thanks for the image! 📸\n\nSorry, I couldn't analyze the image. Please send the product name or type *products* to see the list.",
+                    'fr' => "Merci pour l'image! 📸\n\nDésolé, je n'ai pas pu analyser l'image. Veuillez envoyer le nom du produit ou tapez *produits* pour voir la liste."
+                ];
+                return $messages[$lang] ?? $messages['en'];
+            }
+
+            $description = $result['description'];
+            $products = $result['products'];
+
+            if (empty($products)) {
+                // No matching products found
+                $messages = [
+                    'ar' => "📸 لقد رأيت: *{$description}*\n\n❌ عذراً، لم أجد منتجات مطابقة في المخزون.\n\nاكتب *منتجات* لرؤية جميع المنتجات المتاحة.",
+                    'en' => "📸 I see: *{$description}*\n\n❌ Sorry, I couldn't find matching products in stock.\n\nType *products* to see all available items.",
+                    'fr' => "📸 Je vois: *{$description}*\n\n❌ Désolé, je n'ai pas trouvé de produits correspondants en stock.\n\nTapez *produits* pour voir tous les articles disponibles."
+                ];
+                return $messages[$lang] ?? $messages['en'];
+            }
+
+            // Found matching products!
+            $totalProducts = count($products);
+            $totalPages = ceil($totalProducts / self::PRODUCTS_PER_PAGE);
+            $page = 1;
+            $productsPage = array_slice($products, 0, self::PRODUCTS_PER_PAGE);
+
+            // Save state for product selection
+            $this->conversationState->set($customerId, ConversationState::STATE_AWAITING_PRODUCT_SELECTION, [
+                'current_page' => $page,
+                'total_pages' => $totalPages,
+                'products_on_page' => $productsPage,
+                'all_search_results' => $products,
+                'search_query' => $description
+            ]);
+
+            // Build response with found products
+            $header = [
+                'ar' => "📸 لقد رأيت: *{$description}*\n\n✅ وجدت {$totalProducts} منتج(ات) مطابقة:\n\n",
+                'en' => "📸 I see: *{$description}*\n\n✅ Found {$totalProducts} matching product(s):\n\n",
+                'fr' => "📸 Je vois: *{$description}*\n\n✅ Trouvé {$totalProducts} produit(s) correspondant(s):\n\n"
+            ];
+
+            return ($header[$lang] ?? $header['en']) .
+                   ResponseTemplates::productList($lang, $productsPage, $page, $totalPages);
+
+        } catch (Exception $e) {
+            logMessage("Error handling image message: " . $e->getMessage(), 'ERROR', WEBHOOK_LOG_FILE);
+            $messages = [
+                'ar' => "شكراً على الصورة! 📸\n\nحدث خطأ في التحليل. يرجى المحاولة مرة أخرى أو اكتب *منتجات* لرؤية القائمة.",
+                'en' => "Thanks for the image! 📸\n\nAn error occurred during analysis. Please try again or type *products* to see the list.",
+                'fr' => "Merci pour l'image! 📸\n\nUne erreur s'est produite lors de l'analyse. Veuillez réessayer ou tapez *produits* pour voir la liste."
+            ];
+            return $messages[$lang] ?? $messages['en'];
+        }
     }
 }
