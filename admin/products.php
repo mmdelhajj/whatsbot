@@ -14,6 +14,29 @@ if (!isset($_SESSION['admin_logged_in']) || !$_SESSION['admin_logged_in']) {
 
 $db = Database::getInstance();
 
+$successMessage = '';
+$errorMessage = '';
+
+// Handle delete request
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_product'])) {
+    $productId = intval($_POST['product_id'] ?? 0);
+
+    if ($productId > 0) {
+        try {
+            $product = $db->fetchOne("SELECT item_name FROM product_info WHERE id = ?", [$productId]);
+
+            if ($product) {
+                $db->delete('product_info', 'id = :id', ['id' => $productId]);
+                $successMessage = "✅ Product \"" . htmlspecialchars($product['item_name']) . "\" deleted successfully.";
+            } else {
+                $errorMessage = "❌ Product not found.";
+            }
+        } catch (Exception $e) {
+            $errorMessage = "❌ Error deleting product: " . $e->getMessage();
+        }
+    }
+}
+
 // Search functionality
 $searchTerm = isset($_GET['search']) ? trim($_GET['search']) : '';
 
@@ -101,6 +124,11 @@ $stats = $db->fetchOne("
         .search-btn:hover { background: #5568d3; }
         .clear-btn { padding: 10px 15px; background: #6b7280; color: white; border: none; border-radius: 6px; font-weight: 500; cursor: pointer; text-decoration: none; display: inline-block; transition: all 0.3s; }
         .clear-btn:hover { background: #4b5563; }
+        .message { padding: 15px; border-radius: 6px; margin-bottom: 20px; }
+        .message.success { background: #d1fae5; color: #059669; }
+        .message.error { background: #fee2e2; color: #dc2626; }
+        .delete-btn { background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.85em; font-weight: 500; transition: all 0.3s; }
+        .delete-btn:hover { background: #dc2626; }
     </style>
 </head>
 <body>
@@ -129,6 +157,18 @@ $stats = $db->fetchOne("
     </div>
 
     <div class="container">
+        <?php if ($successMessage): ?>
+        <div class="message success">
+            <?= $successMessage ?>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($errorMessage): ?>
+        <div class="message error">
+            <?= $errorMessage ?>
+        </div>
+        <?php endif; ?>
+
         <div class="stats-grid">
             <div class="stat-card">
                 <h3>Total Products</h3>
@@ -179,6 +219,7 @@ $stats = $db->fetchOne("
                             <th>Price</th>
                             <th>Stock</th>
                             <th>Status</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -206,6 +247,12 @@ $stats = $db->fetchOne("
                             <td><?= number_format($product['price'], 0) ?> <?= CURRENCY ?></td>
                             <td><?= $stock ?></td>
                             <td><span class="badge badge-<?= $stockBadge ?>"><?= $stockText ?></span></td>
+                            <td>
+                                <form method="POST" style="display: inline;" onsubmit="return confirm('⚠️ Delete product \'<?= htmlspecialchars($product['item_name']) ?>\'?\n\nThis action cannot be undone.');">
+                                    <input type="hidden" name="product_id" value="<?= $product['id'] ?>">
+                                    <button type="submit" name="delete_product" class="delete-btn">🗑️ Delete</button>
+                                </form>
+                            </td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
