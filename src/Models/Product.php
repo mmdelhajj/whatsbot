@@ -13,6 +13,7 @@ class Product {
 
     /**
      * Search products by name or code (OPTIMIZED with fulltext)
+     * ONLY returns products IN STOCK
      */
     public function search($query, $limit = 10) {
         // For short queries or exact codes, use LIKE (faster for exact matches)
@@ -20,7 +21,8 @@ class Product {
             $searchTerm = "%{$query}%";
             return $this->db->fetchAll(
                 "SELECT * FROM product_info
-                 WHERE item_code LIKE ? OR item_name LIKE ?
+                 WHERE (item_code LIKE ? OR item_name LIKE ?)
+                   AND stock_quantity > 0
                  ORDER BY
                     CASE
                         WHEN item_code = ? THEN 1
@@ -37,8 +39,9 @@ class Product {
         return $this->db->fetchAll(
             "SELECT *, MATCH(item_name, description) AGAINST(? IN NATURAL LANGUAGE MODE) as relevance
              FROM product_info
-             WHERE MATCH(item_name, description) AGAINST(? IN NATURAL LANGUAGE MODE)
-                OR item_code LIKE ?
+             WHERE (MATCH(item_name, description) AGAINST(? IN NATURAL LANGUAGE MODE)
+                OR item_code LIKE ?)
+               AND stock_quantity > 0
              ORDER BY relevance DESC, item_name
              LIMIT ?",
             [$query, $query, "%{$query}%", $limit]

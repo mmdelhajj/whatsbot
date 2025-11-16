@@ -62,34 +62,24 @@ class ClaudeAI {
      */
     public function smartProductSearch($customerId, $customerMessage, $customerData = []) {
         try {
-            // Get available products from database
             $productModel = new Product();
-            $allProducts = $productModel->getAll(1, 50); // Get page 1, 50 products
 
-            // Build product context for AI
-            $productContext = "Available products in inventory:\n";
-            foreach (array_slice($allProducts, 0, 30) as $product) {
-                $status = floatval($product['quantity']) > 0 ? 'IN STOCK' : 'OUT OF STOCK';
-                $productContext .= "- {$product['item_name']} ({$product['item_code']}) - " .
-                                  number_format($product['price'], 0) . " LBP - {$status}\n";
-            }
-
-            // Build AI prompt for product search
-            $systemPrompt = "You are a product search system for " . STORE_NAME . ".\n\n";
-            $systemPrompt .= "IMPORTANT: You MUST respond ONLY with product codes in this exact format:\n";
-            $systemPrompt .= "SEARCH:CODE1,CODE2,CODE3\n\n";
-            $systemPrompt .= $productContext . "\n\n";
-            $systemPrompt .= "Instructions:\n";
-            $systemPrompt .= "1. Analyze the customer's request\n";
-            $systemPrompt .= "2. Find matching products from the inventory list above\n";
-            $systemPrompt .= "3. Return ONLY: SEARCH:CODE1,CODE2,CODE3 (nothing else!)\n";
-            $systemPrompt .= "4. If NO match found, respond: NO_MATCH\n\n";
+            // Build AI prompt to extract search keywords
+            $systemPrompt = "You are a search keyword extractor for a bookstore/stationery store.\n\n";
+            $systemPrompt .= "Your job: Extract English search keywords from the customer's message.\n\n";
+            $systemPrompt .= "Rules:\n";
+            $systemPrompt .= "1. Translate Arabic/French to English\n";
+            $systemPrompt .= "2. Return ONLY search keywords (no explanations)\n";
+            $systemPrompt .= "3. Keywords should be product types (pen, notebook, book, etc.)\n";
+            $systemPrompt .= "4. Return multiple keywords separated by spaces\n\n";
             $systemPrompt .= "Examples:\n";
-            $systemPrompt .= "Customer: 'رخيص قلم' → SEARCH:CODE1,CODE2\n";
-            $systemPrompt .= "Customer: 'rouleau' → SEARCH:ROUL001,ROUL002\n";
-            $systemPrompt .= "Customer: 'best pen' → SEARCH:CODE5,CODE6\n";
-            $systemPrompt .= "Customer: 'unicorn' → NO_MATCH\n\n";
-            $systemPrompt .= "Remember: ONLY return the format 'SEARCH:codes' or 'NO_MATCH'. No explanations!";
+            $systemPrompt .= "Customer: 'قلم أزرق' → pen blue\n";
+            $systemPrompt .= "Customer: 'هل يوجد قلم ستيلو' → pen stylo\n";
+            $systemPrompt .= "Customer: 'دفتر أحمر' → notebook red\n";
+            $systemPrompt .= "Customer: 'cahier' → notebook\n";
+            $systemPrompt .= "Customer: 'livre' → book\n";
+            $systemPrompt .= "Customer: 'rouleau' → roll\n\n";
+            $systemPrompt .= "Return ONLY the keywords, nothing else!";
 
             $messages = [
                 ['role' => 'user', 'content' => $customerMessage]
@@ -97,39 +87,30 @@ class ClaudeAI {
 
             $response = $this->callClaudeAPI($systemPrompt, $messages);
 
-            if ($response['success']) {
-                $aiResponse = $response['message'];
+            if (!$response['success']) {
+                return ['success' => false, 'error' => $response['error']];
+            }
 
-                // Check if AI returned product codes
-                if (preg_match('/SEARCH:([^\n]+)/', $aiResponse, $matches)) {
-                    $productCodes = array_map('trim', explode(',', $matches[1]));
-                    $foundProducts = [];
+            $keywords = trim($response['message']);
+            logMessage("AI extracted keywords: '{$keywords}' from query: '{$customerMessage}'", 'DEBUG');
 
-                    foreach ($productCodes as $code) {
-                        $product = $productModel->findByCode($code);
-                        if ($product) {
-                            $foundProducts[] = $product;
-                        }
-                    }
+            // Search database with AI-extracted keywords
+            $foundProducts = $productModel->search($keywords, 10);
 
-                    if (!empty($foundProducts)) {
-                        return [
-                            'success' => true,
-                            'type' => 'products',
-                            'products' => $foundProducts
-                        ];
-                    }
-                }
-
-                // AI gave a text response
+            if (!empty($foundProducts)) {
                 return [
                     'success' => true,
-                    'type' => 'message',
-                    'message' => str_replace('SEARCH:', '', $aiResponse)
+                    'type' => 'products',
+                    'products' => $foundProducts
                 ];
             }
 
-            return ['success' => false, 'error' => $response['error']];
+            // No products found
+            return [
+                'success' => true,
+                'type' => 'message',
+                'message' => 'NO_MATCH'
+            ];
 
         } catch (Exception $e) {
             logMessage("Smart search error: " . $e->getMessage(), 'ERROR');

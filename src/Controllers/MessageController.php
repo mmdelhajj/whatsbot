@@ -51,13 +51,29 @@ class MessageController {
                 $customer = $this->customerModel->findById($customer['id']);
             }
 
-            // Detect language from message
-            $lang = LanguageDetector::detect($message);
-
-            // Get conversation state
+            // Get conversation state first
             $state = $this->conversationState->getState($customer['id']);
+            $stateData = $this->conversationState->getData($customer['id']);
 
-            // Save detected language to conversation state and customer record
+            // Check for previously saved language (from state or customer record)
+            $savedLang = $stateData['language'] ?? $customer['preferred_language'] ?? null;
+
+            // Detect language from current message
+            $detectedLang = LanguageDetector::detect($message);
+
+            // If message contains only numbers/symbols (no letters), keep the saved language
+            // This prevents "1", "2", "next" from resetting language to default 'en'
+            $hasLetters = preg_match('/[\p{L}]/u', $message);
+
+            if (!$hasLetters && $savedLang) {
+                // No letters in message (e.g., "1", "2"), use saved language
+                $lang = $savedLang;
+            } else {
+                // Message has actual text, use detected language
+                $lang = $detectedLang;
+            }
+
+            // Save language to conversation state and customer record
             $this->conversationState->updateData($customer['id'], ['language' => $lang]);
             $this->customerModel->update($customer['id'], ['preferred_language' => $lang]);
 
@@ -282,9 +298,9 @@ class MessageController {
                         if (trim($aiSearch['message']) === 'NO_MATCH') {
                             // Show friendly "no products found" message
                             $messages = [
-                                'ar' => "❌ عذراً، لم أجد هذا المنتج في المخزون.\n\nاكتب *منتجات* لرؤية كل المنتجات المتاحة.",
-                                'en' => "❌ Sorry, I couldn't find that product in our inventory.\n\nType *products* to see all available items.",
-                                'fr' => "❌ Désolé, je n'ai pas trouvé ce produit dans notre inventaire.\n\nTapez *produits* pour voir tous les articles disponibles."
+                                'ar' => "❌ عذراً، هذا المنتج غير متوفر في المخزون حالياً.\n\nاكتب *منتجات* لرؤية المنتجات المتاحة.",
+                                'en' => "❌ Sorry, this product is not currently in stock.\n\nType *products* to see available items.",
+                                'fr' => "❌ Désolé, ce produit n'est pas en stock actuellement.\n\nTapez *produits* pour voir les articles disponibles."
                             ];
                             return $messages[$lang] ?? $messages['en'];
                         }
@@ -857,20 +873,32 @@ class MessageController {
         // Save quantity and proceed with order flow
         $this->conversationState->updateData($customerId, ['quantity' => $quantity]);
 
-        // Check if customer has complete information
+        // Check if customer has complete information (email is optional)
         $customer = $this->customerModel->findById($customerId);
 
-        if (!empty($customer['name']) && !empty($customer['email']) && !empty($customer['address'])) {
-            // Customer has all info, create order directly
+        if (!empty($customer['name']) && !empty($customer['address'])) {
+            // Customer has required info (name + address), create order directly
             return $this->createOrderDirectly($customerId, $selectedProduct, $customer, $lang);
         } else {
-            // Need to collect customer information, start with name
-            $this->conversationState->set($customerId, ConversationState::STATE_AWAITING_NAME, [
-                'selected_product' => $selectedProduct,
-                'quantity' => $quantity
-            ]);
-
-            return ResponseTemplates::askName($lang, $selectedProduct['item_name']);
+            // Need to collect customer information
+            // Check what's missing and ask for it
+            if (empty($customer['name'])) {
+                // Start with name
+                $this->conversationState->set($customerId, ConversationState::STATE_AWAITING_NAME, [
+                    'selected_product' => $selectedProduct,
+                    'quantity' => $quantity
+                ]);
+                return ResponseTemplates::askName($lang, $selectedProduct['item_name']);
+            } else if (empty($customer['address'])) {
+                // Already have name, just need address
+                $this->conversationState->set($customerId, ConversationState::STATE_AWAITING_ADDRESS, [
+                    'selected_product' => $selectedProduct,
+                    'quantity' => $quantity,
+                    'customer_name' => $customer['name'],
+                    'customer_email' => $customer['email'] ?? ''
+                ]);
+                return ResponseTemplates::askAddress($lang);
+            }
         }
     }
 
@@ -884,12 +912,16 @@ class MessageController {
             return ResponseTemplates::invalidInput($lang);
         }
 
-        // Save name and move to email
-        $this->conversationState->set($customerId, ConversationState::STATE_AWAITING_EMAIL, [
-            'customer_name' => $name
+        // Update customer name in database
+        $this->customerModel->update($customerId, ['name' => $name]);
+
+        // Save name and move directly to address (email is optional)
+        $this->conversationState->set($customerId, ConversationState::STATE_AWAITING_ADDRESS, [
+            'customer_name' => $name,
+            'customer_email' => '' // Email is optional
         ]);
 
-        return ResponseTemplates::askEmail($lang);
+        return ResponseTemplates::askAddress($lang);
     }
 
     /**
@@ -924,16 +956,22 @@ class MessageController {
         // Get all collected data
         $data = $this->conversationState->getData($customerId);
         $product = $data['selected_product'];
-        $name = $data['customer_name'];
-        $email = $data['customer_email'];
         $quantity = $data['quantity'] ?? 1;
 
-        // Update customer information
-        $this->customerModel->update($customerId, [
-            'name' => $name,
-            'email' => $email,
-            'address' => $address
-        ]);
+        // Get customer data (might be from state or database)
+        $customer = $this->customerModel->findById($customerId);
+        $name = $data['customer_name'] ?? $customer['name'];
+        $email = $data['customer_email'] ?? $customer['email'] ?? '';
+
+        // Update customer information (only update fields that have values)
+        $updateData = ['address' => $address];
+        if (!empty($name)) {
+            $updateData['name'] = $name;
+        }
+        if (!empty($email)) {
+            $updateData['email'] = $email;
+        }
+        $this->customerModel->update($customerId, $updateData);
 
         // Create order
         try {

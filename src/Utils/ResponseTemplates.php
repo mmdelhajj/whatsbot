@@ -201,11 +201,16 @@ class ResponseTemplates {
 
         $quantityText = $quantity > 1 ? " (x{$quantity})" : "";
 
+        // Email line is optional - only show if provided
+        $emailLineAr = !empty($email) ? "📧 *البريد:* {$email}\n" : "";
+        $emailLineEn = !empty($email) ? "📧 *Email:* {$email}\n" : "";
+        $emailLineFr = !empty($email) ? "📧 *Email:* {$email}\n" : "";
+
         $messages = [
             'ar' => "✅ *تم إنشاء طلبك بنجاح!*\n\n" .
                     "📦 *المنتج:* {$product}{$quantityText}\n" .
                     "👤 *الاسم:* {$name}\n" .
-                    "📧 *البريد:* {$email}\n" .
+                    $emailLineAr .
                     "📍 *العنوان:* {$address}\n" .
                     ($quantity > 1 ? "💰 *السعر للقطعة:* {$unitPrice} " . CURRENCY . "\n" : "") .
                     "💰 *المبلغ الإجمالي:* {$totalPrice} " . CURRENCY . "\n\n" .
@@ -214,7 +219,7 @@ class ResponseTemplates {
             'en' => "✅ *Your order has been created successfully!*\n\n" .
                     "📦 *Product:* {$product}{$quantityText}\n" .
                     "👤 *Name:* {$name}\n" .
-                    "📧 *Email:* {$email}\n" .
+                    $emailLineEn .
                     "📍 *Address:* {$address}\n" .
                     ($quantity > 1 ? "💰 *Unit Price:* {$unitPrice} " . CURRENCY . "\n" : "") .
                     "💰 *Total:* {$totalPrice} " . CURRENCY . "\n\n" .
@@ -223,7 +228,7 @@ class ResponseTemplates {
             'fr' => "✅ *Votre commande a été créée avec succès!*\n\n" .
                     "📦 *Produit:* {$product}{$quantityText}\n" .
                     "👤 *Nom:* {$name}\n" .
-                    "📧 *Email:* {$email}\n" .
+                    $emailLineFr .
                     "📍 *Adresse:* {$address}\n" .
                     ($quantity > 1 ? "💰 *Prix unitaire:* {$unitPrice} " . CURRENCY . "\n" : "") .
                     "💰 *Total:* {$totalPrice} " . CURRENCY . "\n\n" .
