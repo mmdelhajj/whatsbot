@@ -37,12 +37,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_qa'])) {
     $answerAr = trim($_POST['answer_ar']);
     $answerEn = trim($_POST['answer_en']);
     $answerFr = trim($_POST['answer_fr']);
+    $answerLb = trim($_POST['answer_lb'] ?? '');
 
     // Validate: at least one pattern is required
     if (empty($patternAr) && empty($patternEn) && empty($patternFr) && empty($patternLb)) {
         $errorMessage = "At least one question pattern is required!";
-    } elseif (empty($answerAr) && empty($answerEn) && empty($answerFr)) {
-        $errorMessage = "At least one answer (Arabic, English, or French) is required!";
+    } elseif (empty($answerAr) && empty($answerEn) && empty($answerFr) && empty($answerLb)) {
+        $errorMessage = "At least one answer is required!";
     } else {
         // Combine patterns into one regex pattern
         $patterns = [];
@@ -55,15 +56,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_qa'])) {
         if ($id) {
             // Update existing
             $db->query(
-                "UPDATE custom_qa SET question_pattern = ?, pattern_ar = ?, pattern_en = ?, pattern_fr = ?, pattern_lb = ?, answer_ar = ?, answer_en = ?, answer_fr = ? WHERE id = ?",
-                [$questionPattern, $patternAr, $patternEn, $patternFr, $patternLb, $answerAr, $answerEn, $answerFr, $id]
+                "UPDATE custom_qa SET question_pattern = ?, pattern_ar = ?, pattern_en = ?, pattern_fr = ?, pattern_lb = ?, answer_ar = ?, answer_en = ?, answer_fr = ?, answer_lb = ? WHERE id = ?",
+                [$questionPattern, $patternAr, $patternEn, $patternFr, $patternLb, $answerAr, $answerEn, $answerFr, $answerLb, $id]
             );
             $successMessage = "Q&A updated successfully! ✅";
         } else {
             // Insert new
             $db->query(
-                "INSERT INTO custom_qa (question_pattern, pattern_ar, pattern_en, pattern_fr, pattern_lb, answer_ar, answer_en, answer_fr) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                [$questionPattern, $patternAr, $patternEn, $patternFr, $patternLb, $answerAr, $answerEn, $answerFr]
+                "INSERT INTO custom_qa (question_pattern, pattern_ar, pattern_en, pattern_fr, pattern_lb, answer_ar, answer_en, answer_fr, answer_lb) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [$questionPattern, $patternAr, $patternEn, $patternFr, $patternLb, $answerAr, $answerEn, $answerFr, $answerLb]
             );
             $successMessage = "Q&A added successfully! ✅";
         }
@@ -230,6 +231,12 @@ if (isset($_GET['edit'])) {
                     <textarea name="answer_fr" placeholder="Réponse en français..."><?= htmlspecialchars($editEntry['answer_fr'] ?? '') ?></textarea>
                 </div>
 
+                <div class="form-group">
+                    <label>🇱🇧 Answer (Lebanese) - Optional</label>
+                    <textarea name="answer_lb" placeholder="Jaweb bel lebnene... (example: khalas habibi, rouh 3al settings...)"><?= htmlspecialchars($editEntry['answer_lb'] ?? '') ?></textarea>
+                    <small>Casual/friendly response in Lebanese/Franco-Arabic (optional)</small>
+                </div>
+
                 <button type="submit" name="save_qa" class="btn btn-primary">
                     <?= $editEntry ? '💾 Update Q&A' : '➕ Add Q&A' ?>
                 </button>
@@ -275,7 +282,8 @@ if (isset($_GET['edit'])) {
                             <td>
                                 <?= !empty($qa['answer_ar']) ? '🇸🇦 AR ' : '' ?>
                                 <?= !empty($qa['answer_en']) ? '🇬🇧 EN ' : '' ?>
-                                <?= !empty($qa['answer_fr']) ? '🇫🇷 FR' : '' ?>
+                                <?= !empty($qa['answer_fr']) ? '🇫🇷 FR ' : '' ?>
+                                <?= !empty($qa['answer_lb']) ? '🇱🇧 LB' : '' ?>
                             </td>
                             <td>
                                 <span class="badge badge-<?= $qa['is_active'] ? 'active' : 'inactive' ?>">

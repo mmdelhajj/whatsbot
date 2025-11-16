@@ -441,13 +441,27 @@ class MessageController {
         foreach ($qaEntries as $qa) {
             $pattern = $qa['question_pattern'];
 
+            // Log for debugging
+            logMessage("Checking custom Q&A pattern: '{$pattern}' against message: '{$messageLower}'", 'DEBUG');
+
             // Try to match the pattern (case-insensitive, unicode-safe)
-            if (preg_match('/' . $pattern . '/ui', $messageLower)) {
+            // Use @ to suppress warnings if pattern is invalid
+            $matched = @preg_match('/' . $pattern . '/ui', $messageLower);
+
+            if ($matched === 1) {
                 // Pattern matched! Return the appropriate language answer
+                logMessage("Custom Q&A pattern MATCHED!", 'DEBUG');
                 $answer = null;
 
-                // Try to get answer in customer's language first
-                if ($lang === 'ar' && !empty($qa['answer_ar'])) {
+                // Check if message is in Lebanese/Franco-Arabic (contains numbers like 3, 7, 2 or Latin chars)
+                $isLebanese = preg_match('/[0-9]/', $message) || preg_match('/[a-zA-Z]/', $message);
+
+                // If Lebanese answer available and message looks Lebanese, use it
+                if ($isLebanese && !empty($qa['answer_lb'])) {
+                    $answer = $qa['answer_lb'];
+                }
+                // Otherwise try to get answer in customer's language
+                elseif ($lang === 'ar' && !empty($qa['answer_ar'])) {
                     $answer = $qa['answer_ar'];
                 } elseif ($lang === 'en' && !empty($qa['answer_en'])) {
                     $answer = $qa['answer_en'];
@@ -457,7 +471,7 @@ class MessageController {
 
                 // Fallback to any available language if preferred language not available
                 if (empty($answer)) {
-                    $answer = $qa['answer_en'] ?: $qa['answer_ar'] ?: $qa['answer_fr'];
+                    $answer = $qa['answer_lb'] ?: $qa['answer_en'] ?: $qa['answer_ar'] ?: $qa['answer_fr'];
                 }
 
                 if (!empty($answer)) {
