@@ -422,10 +422,18 @@ install_phpmyadmin() {
 setup_cron_sync() {
     print_info "Setting up automatic sync cron job..."
 
-    # Add cron job to run sync every minute (script handles interval internally)
-    (crontab -l 2>/dev/null; echo "* * * * * /usr/bin/php ${INSTALL_DIR}/scripts/sync-brains.php >> ${INSTALL_DIR}/logs/sync.log 2>&1") | crontab -
+    # Create system-wide cron job in /etc/cron.d/ (better than user crontab)
+    cat > /etc/cron.d/whatsbot-sync <<EOF
+# WhatsApp Bot - Automatic Sync
+# Runs every minute, but script only syncs based on SYNC_INTERVAL setting
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
-    print_message "Cron job installed (syncs every ${SYNC_INTERVAL:-240} minutes)"
+* * * * * root /usr/bin/php ${INSTALL_DIR}/scripts/sync-brains.php >> ${INSTALL_DIR}/logs/sync.log 2>&1
+EOF
+
+    chmod 644 /etc/cron.d/whatsbot-sync
+    print_message "Cron job installed at /etc/cron.d/whatsbot-sync (syncs every ${SYNC_INTERVAL:-240} minutes)"
 }
 
 # Function to print installation summary
