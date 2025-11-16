@@ -232,6 +232,9 @@ STORE_HOURS=${STORE_HOURS}
 
 STORE_LATITUDE=${STORE_LATITUDE}
 STORE_LONGITUDE=${STORE_LONGITUDE}
+
+# Automatic Sync Settings
+SYNC_INTERVAL=240
 EOF
 
     chmod 600 "$INSTALL_DIR/.env"
@@ -415,6 +418,16 @@ install_phpmyadmin() {
     fi
 }
 
+# Function to setup automatic sync cron job
+setup_cron_sync() {
+    print_info "Setting up automatic sync cron job..."
+
+    # Add cron job to run sync every minute (script handles interval internally)
+    (crontab -l 2>/dev/null; echo "* * * * * /usr/bin/php ${INSTALL_DIR}/scripts/sync-brains.php >> ${INSTALL_DIR}/logs/sync.log 2>&1") | crontab -
+
+    print_message "Cron job installed (syncs every ${SYNC_INTERVAL:-240} minutes)"
+}
+
 # Function to print installation summary
 print_summary() {
     echo ""
@@ -449,6 +462,11 @@ print_summary() {
     print_info "Webhook Configuration:"
     echo ""
     echo "  🔐 Webhook Secret: $WEBHOOK_SECRET"
+    echo ""
+    print_info "Automatic Sync:"
+    echo ""
+    echo "  🔄 Cron job installed (syncs every 4 hours by default)"
+    echo "  📊 Change interval in Admin → Settings → Sync Interval"
     echo ""
     print_warning "IMPORTANT: Save these credentials in a secure location!"
     echo ""
@@ -486,6 +504,7 @@ main() {
     create_admin_user
     setup_nginx
     set_permissions
+    setup_cron_sync
     install_phpmyadmin
     print_summary
 }
