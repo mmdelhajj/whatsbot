@@ -217,6 +217,7 @@ $currentSettings = [
             <a href="/admin/messages.php">Messages</a>
             <a href="/admin/orders.php">Orders</a>
             <a href="/admin/products.php">Products</a>
+            <a href="/admin/custom-qa.php">Custom Q&A</a>
             
             
             <a href="/admin/import-customers.php">Import Customers</a>
