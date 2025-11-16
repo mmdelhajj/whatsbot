@@ -30,28 +30,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_id'])) {
 // Handle add/edit
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_qa'])) {
     $id = $_POST['qa_id'] ?? null;
-    $questionPattern = trim($_POST['question_pattern']);
+    $patternAr = trim($_POST['pattern_ar'] ?? '');
+    $patternEn = trim($_POST['pattern_en'] ?? '');
+    $patternFr = trim($_POST['pattern_fr'] ?? '');
     $answerAr = trim($_POST['answer_ar']);
     $answerEn = trim($_POST['answer_en']);
     $answerFr = trim($_POST['answer_fr']);
 
-    if (empty($questionPattern)) {
-        $errorMessage = "Question pattern is required!";
+    // Validate: at least one pattern is required
+    if (empty($patternAr) && empty($patternEn) && empty($patternFr)) {
+        $errorMessage = "At least one question pattern (Arabic, English, or French) is required!";
     } elseif (empty($answerAr) && empty($answerEn) && empty($answerFr)) {
         $errorMessage = "At least one answer (Arabic, English, or French) is required!";
     } else {
+        // Combine patterns into one regex pattern
+        $patterns = [];
+        if (!empty($patternAr)) $patterns[] = $patternAr;
+        if (!empty($patternEn)) $patterns[] = $patternEn;
+        if (!empty($patternFr)) $patterns[] = $patternFr;
+        $questionPattern = '(' . implode('|', $patterns) . ')';
+
         if ($id) {
             // Update existing
             $db->query(
-                "UPDATE custom_qa SET question_pattern = ?, answer_ar = ?, answer_en = ?, answer_fr = ? WHERE id = ?",
-                [$questionPattern, $answerAr, $answerEn, $answerFr, $id]
+                "UPDATE custom_qa SET question_pattern = ?, pattern_ar = ?, pattern_en = ?, pattern_fr = ?, answer_ar = ?, answer_en = ?, answer_fr = ? WHERE id = ?",
+                [$questionPattern, $patternAr, $patternEn, $patternFr, $answerAr, $answerEn, $answerFr, $id]
             );
             $successMessage = "Q&A updated successfully! ✅";
         } else {
             // Insert new
             $db->query(
-                "INSERT INTO custom_qa (question_pattern, answer_ar, answer_en, answer_fr) VALUES (?, ?, ?, ?)",
-                [$questionPattern, $answerAr, $answerEn, $answerFr]
+                "INSERT INTO custom_qa (question_pattern, pattern_ar, pattern_en, pattern_fr, answer_ar, answer_en, answer_fr) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [$questionPattern, $patternAr, $patternEn, $patternFr, $answerAr, $answerEn, $answerFr]
             );
             $successMessage = "Q&A added successfully! ✅";
         }
@@ -150,14 +160,15 @@ if (isset($_GET['edit'])) {
 
             <div class="help-text">
                 <h4>💡 How to use Custom Q&A:</h4>
-                <p><strong>Question Pattern:</strong> Enter keywords or phrases that customers might ask. Use <code>|</code> to separate alternatives.</p>
+                <p><strong>Question Keywords:</strong> Enter keywords or phrases that customers might ask in each language.</p>
                 <p><strong>Examples:</strong></p>
                 <ul>
-                    <li><code>(warranty|ضمان|garantie)</code> - Matches "warranty", "ضمان", or "garantie"</li>
-                    <li><code>(gift card|بطاقة هدية|carte cadeau)</code> - Matches gift card questions in any language</li>
-                    <li><code>(bulk order|طلب كبير|commande en gros)</code> - Matches bulk order inquiries</li>
+                    <li><strong>Arabic:</strong> <code>بطاقة هدية|كرت هدية</code> (use | to separate alternatives)</li>
+                    <li><strong>English:</strong> <code>gift card|gift voucher</code></li>
+                    <li><strong>French:</strong> <code>carte cadeau|bon cadeau</code></li>
                 </ul>
-                <p><strong>Answers:</strong> Provide answers in Arabic, English, and/or French. The bot will automatically show the answer in the customer's language.</p>
+                <p><strong>Answers:</strong> Provide answers in each language. The bot will automatically show the answer in the customer's language.</p>
+                <p><small>Note: At least one question pattern and one answer are required.</small></p>
             </div>
 
             <form method="POST">
@@ -165,28 +176,47 @@ if (isset($_GET['edit'])) {
                     <input type="hidden" name="qa_id" value="<?= $editEntry['id'] ?>">
                 <?php endif; ?>
 
+                <h3 style="margin-top: 0; color: #374151; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px;">📝 Question Keywords</h3>
+
                 <div class="form-group">
-                    <label>Question Pattern *</label>
-                    <input type="text" name="question_pattern"
-                           value="<?= htmlspecialchars($editEntry['question_pattern'] ?? '') ?>"
-                           placeholder="(gift card|بطاقة هدية|carte cadeau)" required>
-                    <small>Keywords or phrases customers might ask (use | to separate alternatives)</small>
+                    <label>🇸🇦 Arabic Keywords</label>
+                    <input type="text" name="pattern_ar"
+                           value="<?= htmlspecialchars($editEntry['pattern_ar'] ?? '') ?>"
+                           placeholder="بطاقة هدية|كرت هدية">
+                    <small>Keywords customers might use in Arabic (use | to separate alternatives)</small>
                 </div>
 
                 <div class="form-group">
-                    <label>Answer (Arabic)</label>
+                    <label>🇬🇧 English Keywords</label>
+                    <input type="text" name="pattern_en"
+                           value="<?= htmlspecialchars($editEntry['pattern_en'] ?? '') ?>"
+                           placeholder="gift card|gift voucher">
+                    <small>Keywords customers might use in English (use | to separate alternatives)</small>
+                </div>
+
+                <div class="form-group">
+                    <label>🇫🇷 French Keywords</label>
+                    <input type="text" name="pattern_fr"
+                           value="<?= htmlspecialchars($editEntry['pattern_fr'] ?? '') ?>"
+                           placeholder="carte cadeau|bon cadeau">
+                    <small>Keywords customers might use in French (use | to separate alternatives)</small>
+                </div>
+
+                <h3 style="margin-top: 30px; color: #374151; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px;">💬 Answers</h3>
+
+                <div class="form-group">
+                    <label>🇸🇦 Answer (Arabic)</label>
                     <textarea name="answer_ar" placeholder="الإجابة بالعربية..."><?= htmlspecialchars($editEntry['answer_ar'] ?? '') ?></textarea>
                 </div>
 
                 <div class="form-group">
-                    <label>Answer (English)</label>
+                    <label>🇬🇧 Answer (English)</label>
                     <textarea name="answer_en" placeholder="Answer in English..."><?= htmlspecialchars($editEntry['answer_en'] ?? '') ?></textarea>
                 </div>
 
                 <div class="form-group">
-                    <label>Answer (French)</label>
+                    <label>🇫🇷 Answer (French)</label>
                     <textarea name="answer_fr" placeholder="Réponse en français..."><?= htmlspecialchars($editEntry['answer_fr'] ?? '') ?></textarea>
-                    <small>At least one language answer is required</small>
                 </div>
 
                 <button type="submit" name="save_qa" class="btn btn-primary">
@@ -207,8 +237,8 @@ if (isset($_GET['edit'])) {
                 <table>
                     <thead>
                         <tr>
-                            <th>Question Pattern</th>
-                            <th>Languages</th>
+                            <th>Question Keywords</th>
+                            <th>Answer Languages</th>
                             <th>Status</th>
                             <th>Created</th>
                             <th>Actions</th>
@@ -217,7 +247,17 @@ if (isset($_GET['edit'])) {
                     <tbody>
                         <?php foreach ($qaEntries as $qa): ?>
                         <tr>
-                            <td class="pattern-preview"><?= htmlspecialchars($qa['question_pattern']) ?></td>
+                            <td style="font-size: 0.9em;">
+                                <?php if (!empty($qa['pattern_ar'])): ?>
+                                    <div><strong>🇸🇦 AR:</strong> <span class="pattern-preview"><?= htmlspecialchars($qa['pattern_ar']) ?></span></div>
+                                <?php endif; ?>
+                                <?php if (!empty($qa['pattern_en'])): ?>
+                                    <div><strong>🇬🇧 EN:</strong> <span class="pattern-preview"><?= htmlspecialchars($qa['pattern_en']) ?></span></div>
+                                <?php endif; ?>
+                                <?php if (!empty($qa['pattern_fr'])): ?>
+                                    <div><strong>🇫🇷 FR:</strong> <span class="pattern-preview"><?= htmlspecialchars($qa['pattern_fr']) ?></span></div>
+                                <?php endif; ?>
+                            </td>
                             <td>
                                 <?= !empty($qa['answer_ar']) ? '🇸🇦 AR ' : '' ?>
                                 <?= !empty($qa['answer_en']) ? '🇬🇧 EN ' : '' ?>
