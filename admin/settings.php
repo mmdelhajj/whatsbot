@@ -73,15 +73,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
 
         // Update each setting
         $updates = [
-            'DB_HOST' => $_POST['db_host'] ?? 'localhost',
-            'DB_NAME' => $_POST['db_name'] ?? 'whatsapp_bot',
-            'DB_USER' => $_POST['db_user'] ?? 'whatsapp_user',
-            'DB_PASS' => $_POST['db_pass'] ?? '',
             'BRAINS_API_BASE' => $_POST['brains_api_base'] ?? '',
             'WHATSAPP_ACCOUNT_ID' => $_POST['whatsapp_account_id'] ?? '',
             'WHATSAPP_SEND_SECRET' => $_POST['whatsapp_send_secret'] ?? '',
             'WEBHOOK_SECRET' => $_POST['webhook_secret'] ?? '',
-            'ANTHROPIC_API_KEY' => $_POST['anthropic_api_key'] ?? '',
             'TIMEZONE' => $_POST['timezone'] ?? 'Asia/Beirut',
             'CURRENCY' => $_POST['currency'] ?? 'LBP',
             'STORE_NAME' => $_POST['store_name'] ?? '',
@@ -146,15 +141,10 @@ function loadEnvSettings() {
 $envSettings = loadEnvSettings();
 
 $currentSettings = [
-    'db_host' => $envSettings['db_host'] ?? 'localhost',
-    'db_name' => $envSettings['db_name'] ?? 'whatsapp_bot',
-    'db_user' => $envSettings['db_user'] ?? 'whatsapp_user',
-    'db_pass' => $envSettings['db_pass'] ?? '',
     'brains_api_base' => $envSettings['brains_api_base'] ?? '',
     'whatsapp_account_id' => $envSettings['whatsapp_account_id'] ?? '',
     'whatsapp_send_secret' => $envSettings['whatsapp_send_secret'] ?? '',
     'webhook_secret' => $envSettings['webhook_secret'] ?? '',
-    'anthropic_api_key' => $envSettings['anthropic_api_key'] ?? '',
     'timezone' => $envSettings['timezone'] ?? 'Asia/Beirut',
     'currency' => $envSettings['currency'] ?? 'LBP',
     'store_name' => $envSettings['store_name'] ?? '',
@@ -260,33 +250,6 @@ $currentSettings = [
 
         <form method="POST">
             <div class="section">
-                <h2>⚙️ Database Configuration</h2>
-                <div class="settings-grid">
-                    <div class="form-group">
-                        <label>Database Host</label>
-                        <input type="text" name="db_host" value="<?= htmlspecialchars($currentSettings['db_host']) ?>" required>
-                        <small>Usually "localhost" or IP address</small>
-                    </div>
-                    <div class="form-group">
-                        <label>Database Name</label>
-                        <input type="text" name="db_name" value="<?= htmlspecialchars($currentSettings['db_name']) ?>" required>
-                        <small>Name of your MySQL database</small>
-                    </div>
-                    <div class="form-group">
-                        <label>Database User</label>
-                        <input type="text" name="db_user" value="<?= htmlspecialchars($currentSettings['db_user']) ?>" required>
-                        <small>MySQL username</small>
-                    </div>
-                    <div class="form-group password-field">
-                        <label>Database Password</label>
-                        <input type="password" id="db_pass" name="db_pass" value="<?= htmlspecialchars($currentSettings['db_pass']) ?>">
-                        <button type="button" class="toggle-password" onclick="togglePassword('db_pass')">👁️</button>
-                        <small>MySQL password</small>
-                    </div>
-                </div>
-            </div>
-
-            <div class="section">
                 <h2>🏪 Brains ERP API</h2>
                 <div class="form-group">
                     <label>Brains API Base URL</label>
@@ -315,16 +278,6 @@ $currentSettings = [
                         <button type="button" class="toggle-password" onclick="togglePassword('webhook_secret')">👁️</button>
                         <small>Secret for validating incoming webhooks</small>
                     </div>
-                </div>
-            </div>
-
-            <div class="section">
-                <h2>🤖 Anthropic Claude AI</h2>
-                <div class="form-group password-field">
-                    <label>Anthropic API Key</label>
-                    <input type="password" id="anthropic_api_key" name="anthropic_api_key" value="<?= htmlspecialchars($currentSettings['anthropic_api_key']) ?>" placeholder="sk-ant-...">
-                    <button type="button" class="toggle-password" onclick="togglePassword('anthropic_api_key')">👁️</button>
-                    <small>Your Anthropic API key for Claude AI</small>
                 </div>
             </div>
 
