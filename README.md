@@ -1,231 +1,150 @@
-# WhatsApp Bot for Librarie Memoires
+# WhatsApp Bot - AI-Powered Customer Service
 
-Intelligent multilingual WhatsApp bot for product catalog, orders, and customer service.
+An intelligent WhatsApp chatbot powered by Claude AI that handles customer inquiries, product searches, order management, and integrates with Brains ERP system.
 
-## 🌟 Features
+## Features
 
-- **Multilingual Support**: Arabic, English, French, Lebanese Arabic
-- **Smart Product Search**: AI-powered product search with 200+ translations
-- **Order Management**: Complete order workflow with Brains ERP integration
-- **FAQ Auto-Responses**: Automatic answers for hours, location, delivery
-- **Conversation Memory**: State-based conversation tracking
-- **Pagination**: Shows 10 products per page with smart navigation
-- **Visual Product Display**: Product listings with prices and stock status
+- 🤖 **AI-Powered Responses** - Intelligent customer service using Anthropic's Claude AI
+- 🛍️ **Product Search** - Search and browse products with multilingual support
+- 📦 **Order Management** - Track orders and manage customer purchases
+- 👥 **Customer Management** - Automatic customer profile creation and management
+- 🌍 **Multilingual Support** - Arabic, English, French, and Lebanese (Franco-Arabic)
+- 💬 **Custom Q&A** - Admin-managed custom responses for common questions
+- 📊 **Admin Dashboard** - Comprehensive admin panel for management
+- 🔗 **ERP Integration** - Seamless integration with Brains ERP system
+- 📍 **Google Maps Integration** - Share store location with customers
+- ⚡ **Fast Response Times** - Optimized for speed and performance
 
-## 📋 Requirements
+## One-Click Installation
 
-- PHP 8.1 or higher
-- MySQL/MariaDB
-- Composer
-- Nginx or Apache
-- Git
+### Prerequisites
 
-## 🚀 Installation on New Server
+- Ubuntu 22.04 or higher
+- Root or sudo access
+- Minimum 1GB RAM
+- Internet connection
 
-### Step 1: Clone the Repository
+### Installation
 
-```bash
-cd /var/www
-git clone https://github.com/YOUR_USERNAME/whatsapp-bot.git
-cd whatsapp-bot
-```
-
-### Step 2: Install Dependencies
+Run this single command as root (or with sudo):
 
 ```bash
-composer install
+wget -O install.sh https://raw.githubusercontent.com/mmdelhajj/whatsbot/main/install.sh && sudo bash install.sh
 ```
 
-### Step 3: Configure Environment
+The installer will:
+1. ✅ Install all required dependencies (Nginx, MySQL, PHP 8.1)
+2. ✅ Create and configure the database
+3. ✅ Download and setup the application
+4. ✅ Configure Nginx web server
+5. ✅ Create admin user account
+6. ✅ Set proper file permissions
+7. ✅ Optionally install phpMyAdmin
 
-```bash
-# Copy the example environment file
-cp .env.example .env
+### What You'll Need
 
-# Edit the .env file with your credentials
-nano .env
-```
+During installation, you'll be prompted for:
 
-Fill in your actual credentials:
-- Database connection details
-- Brains API URL
-- WhatsApp (ProxSMS) credentials
-- Anthropic Claude AI API key
+- **Store Name** - Your business name
+- **Anthropic API Key** - Get one at https://console.anthropic.com
+- **ProxSMS Credentials** - Account ID and Send Secret from ProxSMS
+- **Brains ERP API URL** - Your Brains ERP API endpoint (optional)
+- **Store Information** - Location, phone, hours, coordinates
+- **Admin Credentials** - Username and password for admin panel
 
-### Step 4: Set Up Database
+## Quick Start
 
-```bash
-# Create the database
-mysql -u root -p
+After installation:
 
-CREATE DATABASE whatsapp_bot;
-CREATE USER 'whatsapp_user'@'localhost' IDENTIFIED BY 'your_password';
-GRANT ALL PRIVILEGES ON whatsapp_bot.* TO 'whatsapp_user'@'localhost';
-FLUSH PRIVILEGES;
-EXIT;
+1. **Access Admin Panel**: http://YOUR_SERVER_IP/admin
+2. **Configure ProxSMS Webhook**: Point to http://YOUR_SERVER_IP/webhook-whatsapp.php
+3. **Import Products**: Use admin panel to sync from Brains ERP
+4. **Test**: Send a WhatsApp message to your bot number
 
-# Import the database schema (if you have a backup)
-mysql -u whatsapp_user -p whatsapp_bot < database_backup.sql
-```
+## Configuration
 
-### Step 5: Set Permissions
+### ProxSMS Webhook Setup
 
-```bash
-# Create required directories
-mkdir -p logs uploads images
+1. Login to ProxSMS at https://proxsms.com
+2. Go to Settings → Webhooks
+3. Add new webhook:
+   - **URL**: http://YOUR_SERVER_IP/webhook-whatsapp.php
+   - **Secret**: (from your .env WEBHOOK_SECRET)
+   - **Events**: Enable "WhatsApp Messages"
+4. Save and activate
 
-# Set proper permissions
-chown -R www-data:www-data /var/www/whatsapp-bot
-chmod -R 755 /var/www/whatsapp-bot
-chmod -R 775 logs uploads images
-```
+### Admin Panel Features
 
-### Step 6: Configure Nginx
+- 📊 Dashboard with real-time statistics
+- 👥 Customer management and search
+- 💬 Complete message history
+- 📦 Order tracking and management
+- 🛍️ Product catalog with search
+- ❓ Custom Q&A for instant responses
+- ⚙️ Settings and configuration
 
-```bash
-# Create Nginx configuration
-nano /etc/nginx/sites-available/whatsapp-bot
-```
+## Custom Q&A
 
-Add this configuration:
+Create instant responses without using AI:
 
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-    root /var/www/whatsapp-bot;
-    index index.php;
+1. Go to Admin Panel → Custom Q&A
+2. Click "Add New Q&A"
+3. Enter keywords in multiple languages
+4. Provide answers in Arabic, English, French, Lebanese
+5. Save and activate
 
-    location / {
-        try_files $uri $uri/ /index.php?$query_string;
-    }
-
-    location ~ \.php$ {
-        fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
-        fastcgi_index index.php;
-        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-        include fastcgi_params;
-    }
-
-    location ~ /\.ht {
-        deny all;
-    }
-}
-```
-
-```bash
-# Enable the site
-ln -s /etc/nginx/sites-available/whatsapp-bot /etc/nginx/sites-enabled/
-nginx -t
-systemctl reload nginx
-```
-
-### Step 7: Restart PHP-FPM
-
-```bash
-systemctl restart php8.3-fpm
-```
-
-## 📸 Product Images (Optional)
-
-If you have product images, upload them separately to save space in git:
-
-```bash
-# On new server, create images directory
-mkdir -p /var/www/whatsapp-bot/images/products
-
-# Upload images via SCP/SFTP
-scp -r /path/to/images/* user@newserver:/var/www/whatsapp-bot/images/products/
-```
-
-## 🧪 Testing
-
-Test the bot is working:
-
-```bash
-cd /var/www/whatsapp-bot/admin
-php test-comprehensive-translations.php
-```
-
-## 📚 File Structure
-
-```
-whatsapp-bot/
-├── admin/              # Admin dashboard and test scripts
-├── config/             # Configuration files
-├── logs/               # Log files
-├── public/             # Public facing files
-├── src/
-│   ├── Controllers/    # MessageController, etc.
-│   ├── Models/         # Database models
-│   ├── Services/       # External service integrations
-│   └── Utils/          # Helper classes
-├── .env.example        # Environment template
-├── .gitignore          # Git ignore rules
-└── README.md           # This file
-```
-
-## 🔧 Configuration
-
-### Environment Variables
-
-All sensitive configuration is in `.env`:
-
-- **Database**: Connection details for MySQL
-- **Brains API**: ERP integration endpoint
-- **WhatsApp**: ProxSMS account credentials
-- **Claude AI**: Anthropic API key for smart features
-
-### Store Settings
-
-Update in `.env`:
-- `STORE_NAME`: Your store name
-- `STORE_LOCATION`: Your store location
-- `TIMEZONE`: Your timezone
-- `CURRENCY`: Your currency code
-
-## 🌍 Supported Languages
+## Multilingual Support
 
 The bot automatically detects and responds in:
 
-1. **English** - Full support
-2. **Arabic** - Native script support
-3. **French** - Full support
-4. **Lebanese Arabic** - Transliteration (Franco-Arabic)
+- **Arabic (العربية)** - Full RTL support
+- **English** - Default fallback
+- **French (Français)** - Complete translation
+- **Lebanese (Franco-Arabic)** - Casual dialect (e.g., "fi kteb", "3andak")
 
-## 🤖 AI Features
+## Troubleshooting
 
-Powered by Claude AI for:
-- Smart product search
-- Natural language understanding
-- Complex query handling
-- Multilingual intent detection
+### Bot doesn't respond
 
-## 📞 Support
+1. Check webhook in ProxSMS settings
+2. Verify webhook secret matches .env
+3. Check logs: `tail -f /var/www/whatsbot/logs/webhook.log`
+4. Test APIs in Admin → API Tests
 
-For issues or questions, check the logs:
+### Database errors
+
+1. Verify .env credentials
+2. Check MySQL status: `sudo systemctl status mysql`
+3. Test connection: `mysql -u whatsapp_user -p whatsapp_bot`
+
+### Nginx errors
+
+1. Check PHP-FPM: `sudo systemctl status php8.1-fpm`
+2. View nginx logs: `sudo tail -f /var/log/nginx/whatsbot-error.log`
+3. Test config: `sudo nginx -t`
+
+## Updating
 
 ```bash
-tail -f /var/www/whatsapp-bot/logs/app.log
-tail -f /var/www/whatsapp-bot/logs/webhook.log
+cd /var/www/whatsbot
+sudo git pull origin main
+sudo chown -R www-data:www-data /var/www/whatsbot
+sudo systemctl reload php8.1-fpm
 ```
 
-## 📝 License
+## Security
 
-Private project for Librarie Memoires
+- Environment variables in .env (never committed)
+- Bcrypt password hashing
+- Webhook secret validation
+- Proper file permissions
+- Nginx blocks sensitive files
 
-## 👨‍💻 Development
+## Support
 
-To contribute or continue development:
+- GitHub Issues: https://github.com/mmdelhajj/whatsbot/issues
+- Documentation: This README
 
-1. Clone the repository
-2. Create a new branch: `git checkout -b feature-name`
-3. Make your changes
-4. Test thoroughly
-5. Commit: `git commit -m "Description"`
-6. Push: `git push origin feature-name`
+## Credits
 
----
-
-**Last Updated**: 2025
-**Version**: 2.0
+Built with Claude Code by Anthropic
