@@ -220,7 +220,7 @@ $stats = $db->fetchOne("
                             <td><strong><?= htmlspecialchars($customer['name'] ?: '-') ?></strong></td>
                             <td><?= $customer['email'] ? htmlspecialchars($customer['email']) : '<span style="color: #9ca3af;">-</span>' ?></td>
                             <td><?= htmlspecialchars($customer['brains_account_code'] ?: '-') ?></td>
-                            <td><?= date('M d, Y', strtotime($customer['created_at'])) ?></td>
+                            <td><?= formatDateTime($customer['created_at'], 'M d, Y') ?></td>
                             <td>
                                 <form method="POST" style="display: inline;" onsubmit="return confirm('⚠️ Are you sure you want to delete customer <?= htmlspecialchars($customer['phone']) ?>? This will also delete their orders and messages.');">
                                     <input type="hidden" name="customer_id" value="<?= $customer['id'] ?>">

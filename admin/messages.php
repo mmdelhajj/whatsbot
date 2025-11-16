@@ -151,7 +151,7 @@ $stats = $db->fetchOne("
                     <tbody>
                         <?php foreach ($messages as $msg): ?>
                         <tr>
-                            <td><?= date('M d, H:i', strtotime($msg['created_at'])) ?></td>
+                            <td><?= formatDateTime($msg['created_at'], 'M d, H:i') ?></td>
                             <td>
                                 <?= htmlspecialchars($msg['customer_name'] ?? 'Unknown') ?><br>
                                 <small style="color: #6b7280;"><?= htmlspecialchars($msg['customer_phone']) ?></small>

@@ -32,6 +32,9 @@ class MessageController {
      */
     public function processIncomingMessage($phone, $message, $attachment = null) {
         try {
+            // START PERFORMANCE TIMING
+            $startTime = microtime(true);
+
             // Log incoming message
             $logMsg = "Incoming message from {$phone}: {$message}";
             if ($attachment) {
@@ -77,6 +80,11 @@ class MessageController {
             $this->conversationState->updateData($customer['id'], ['language' => $lang]);
             $this->customerModel->update($customer['id'], ['preferred_language' => $lang]);
 
+            // Log timing after database setup
+            $dbSetupTime = microtime(true);
+            $dbDuration = round(($dbSetupTime - $startTime) * 1000, 2);
+            logMessage("⏱️ DB setup took {$dbDuration}ms", 'DEBUG', WEBHOOK_LOG_FILE);
+
             // If customer sent an image, analyze it first
             if ($attachment && !empty($attachment)) {
                 $response = $this->handleImageMessage($customer['id'], $attachment, $lang);
@@ -85,9 +93,18 @@ class MessageController {
                 $response = $this->routeMessage($customer, $message, $lang, $state);
             }
 
+            // Log timing after response generation
+            $responseTime = microtime(true);
+            $responseDuration = round(($responseTime - $dbSetupTime) * 1000, 2);
+            logMessage("⏱️ Response generation took {$responseDuration}ms", 'DEBUG', WEBHOOK_LOG_FILE);
+
             // Send response
             if ($response) {
+                $beforeSendTime = microtime(true);
                 $sendResult = $this->proxSMS->sendMessage($phone, $response);
+                $afterSendTime = microtime(true);
+                $sendDuration = round(($afterSendTime - $beforeSendTime) * 1000, 2);
+                logMessage("⏱️ ProxSMS API call took {$sendDuration}ms", 'DEBUG', WEBHOOK_LOG_FILE);
 
                 if ($sendResult['success']) {
                     $this->messageModel->saveSent($customer['id'], $response);
@@ -96,6 +113,11 @@ class MessageController {
                     logMessage("Failed to send response: " . ($sendResult['error'] ?? 'Unknown'), 'ERROR', WEBHOOK_LOG_FILE);
                 }
             }
+
+            // Log total processing time
+            $endTime = microtime(true);
+            $totalDuration = round(($endTime - $startTime) * 1000, 2);
+            logMessage("⏱️ TOTAL processing time: {$totalDuration}ms", 'INFO', WEBHOOK_LOG_FILE);
 
             return [
                 'success' => true,
@@ -202,26 +224,26 @@ class MessageController {
         }
 
         if ($this->isLocationQuery($messageLower)) {
-            $mapsLink = "https://maps.google.com/?q=34.00951559789577,35.654434764102675";
+            $mapsLink = "https://google.com/maps?q=" . STORE_LATITUDE . "," . STORE_LONGITUDE;
             $responses = [
                 'en' => "📍 *Location:*\n\n" .
-                        "Librairie Memoires\n" .
-                        "Kfarhbab, Ghazir, Lebanon 🇱🇧\n\n" .
+                        STORE_NAME . "\n" .
+                        STORE_LOCATION . " 🇱🇧\n\n" .
                         "🗺️ Google Maps: {$mapsLink}\n\n" .
-                        "📞 Phone: +961 81 425 673\n" .
-                        "🌐 Website: store.libmemoires.com",
+                        "📞 Phone: " . STORE_PHONE . "\n" .
+                        "🌐 Website: " . STORE_WEBSITE,
                 'fr' => "📍 *Localisation:*\n\n" .
-                        "Librairie Memoires\n" .
-                        "Kfarhbab, Ghazir, Liban 🇱🇧\n\n" .
+                        STORE_NAME . "\n" .
+                        STORE_LOCATION . " 🇱🇧\n\n" .
                         "🗺️ Google Maps: {$mapsLink}\n\n" .
-                        "📞 Téléphone: +961 81 425 673\n" .
-                        "🌐 Site web: store.libmemoires.com",
+                        "📞 Téléphone: " . STORE_PHONE . "\n" .
+                        "🌐 Site web: " . STORE_WEBSITE,
                 'ar' => "📍 *الموقع:*\n\n" .
-                        "Librairie Memoires\n" .
-                        "كفرحباب، غزير، لبنان 🇱🇧\n\n" .
+                        STORE_NAME . "\n" .
+                        STORE_LOCATION . " 🇱🇧\n\n" .
                         "🗺️ خرائط جوجل: {$mapsLink}\n\n" .
-                        "📞 هاتف: +961 81 425 673\n" .
-                        "🌐 موقع: store.libmemoires.com"
+                        "📞 هاتف: " . STORE_PHONE . "\n" .
+                        "🌐 موقع: " . STORE_WEBSITE
             ];
             return $responses[$lang] ?? $responses['en'];
         }
@@ -245,6 +267,12 @@ class MessageController {
                         "اكتب *منتجات* لتصفح منتجاتنا! 😊"
             ];
             return $responses[$lang] ?? $responses['en'];
+        }
+
+        // PRIORITY: Check store info questions BEFORE state routing (so they work in any state)
+        $storeInfoResponse = $this->checkStoreInfoQuestions($message, $lang);
+        if ($storeInfoResponse !== null) {
+            return $storeInfoResponse;
         }
 
         // State-based routing
@@ -273,20 +301,14 @@ class MessageController {
 
             case ConversationState::STATE_IDLE:
             default:
-                // FIRST: Check if asking about store info (website, location, etc.) - answer directly!
-                $storeInfoResponse = $this->checkStoreInfoQuestions($message, $lang);
-                if ($storeInfoResponse !== null) {
-                    return $storeInfoResponse;
-                }
-
-                // SECOND: Try quick search (FAST!)
+                // FIRST: Try quick search (FAST!)
                 $searchResults = $this->quickProductSearch($customer['id'], $message, $lang);
 
                 if ($searchResults !== null) {
                     return $searchResults;
                 }
 
-                // THIRD: Use AI to understand and search intelligently
+                // SECOND: Use AI to understand and search intelligently
                 $aiSearch = $this->claudeAI->smartProductSearch($customer['id'], $message, $customer);
 
                 if ($aiSearch['success']) {
@@ -321,8 +343,8 @@ class MessageController {
     private function checkStoreInfoQuestions($message, $lang) {
         $messageLower = mb_strtolower($message, 'UTF-8');
 
-        // Website questions
-        if (preg_match('/\b(website|site|موقع|موقعكم|موقع الكتروني|site web|votre site)\b/ui', $messageLower)) {
+        // Website questions (flexible matching for Arabic prefixes/suffixes)
+        if (preg_match('/(website|site web|votre site|موقع|الكتروني|إلكتروني)/ui', $messageLower)) {
             $responses = [
                 'ar' => "📱 موقعنا الإلكتروني: " . STORE_WEBSITE . "\n\nيمكنك زيارتنا على الموقع أو التواصل معنا هنا على الواتساب! 😊",
                 'en' => "🌐 Our website: " . STORE_WEBSITE . "\n\nYou can visit our website or chat with us here on WhatsApp! 😊",
@@ -331,18 +353,19 @@ class MessageController {
             return $responses[$lang] ?? $responses['en'];
         }
 
-        // Location questions
-        if (preg_match('/\b(where|location|address|وين|أين|عنوان|موقع المحل|où|adresse|localisation)\b/ui', $messageLower)) {
+        // Location/address questions (flexible matching)
+        if (preg_match('/(where|location|address|وين|أين|عنوان|فين|محل|où|adresse|localisation)/ui', $messageLower)) {
+            $mapsLink = "https://google.com/maps?q=" . STORE_LATITUDE . "," . STORE_LONGITUDE;
             $responses = [
-                'ar' => "📍 موقعنا: " . STORE_LOCATION . "\n\n📞 للتواصل: " . STORE_PHONE . "\n\nنحن هنا لخدمتك! 😊",
-                'en' => "📍 Our location: " . STORE_LOCATION . "\n\n📞 Phone: " . STORE_PHONE . "\n\nWe're here to help! 😊",
-                'fr' => "📍 Notre adresse: " . STORE_LOCATION . "\n\n📞 Téléphone: " . STORE_PHONE . "\n\nNous sommes là pour vous aider! 😊"
+                'ar' => "📍 موقعنا: " . STORE_LOCATION . "\n\n🗺️ خرائط جوجل: " . $mapsLink . "\n\n📞 للتواصل: " . STORE_PHONE . "\n\nنحن هنا لخدمتك! 😊",
+                'en' => "📍 Our location: " . STORE_LOCATION . "\n\n🗺️ Google Maps: " . $mapsLink . "\n\n📞 Phone: " . STORE_PHONE . "\n\nWe're here to help! 😊",
+                'fr' => "📍 Notre adresse: " . STORE_LOCATION . "\n\n🗺️ Google Maps: " . $mapsLink . "\n\n📞 Téléphone: " . STORE_PHONE . "\n\nNous sommes là pour vous aider! 😊"
             ];
             return $responses[$lang] ?? $responses['en'];
         }
 
-        // Hours/opening questions
-        if (preg_match('/\b(hours|open|opening|schedule|وقت|ساعات|متى|timing|horaires|ouvert|heures d\'ouverture)\b/ui', $messageLower)) {
+        // Hours/opening questions (flexible matching for Arabic variations)
+        if (preg_match('/(hours|open|opening|schedule|timing|horaires|ouvert|وقت|أوقات|ساعات|دوام|إقفال|إغلاق|فتح|العمل|متى)/ui', $messageLower)) {
             $responses = [
                 'ar' => "🕐 أوقات العمل: " . STORE_HOURS . "\n\n📞 للاستفسار: " . STORE_PHONE . "\n\nأهلاً وسهلاً بك! 😊",
                 'en' => "🕐 Business hours: " . STORE_HOURS . "\n\n📞 Contact: " . STORE_PHONE . "\n\nWelcome! 😊",
@@ -371,6 +394,86 @@ class MessageController {
             return $responses[$lang] ?? $responses['en'];
         }
 
+        // Thanks/gratitude responses (common, should be instant)
+        if (preg_match('/(thank|thanks|merci|شكرا|شكراً|مشكور)/ui', $messageLower)) {
+            $responses = [
+                'ar' => "العفو! 😊 نحن هنا لخدمتك دائماً.\n\nاكتب *مساعدة* إذا كنت بحاجة لأي شيء.",
+                'en' => "You're welcome! 😊 We're always here to help.\n\nType *help* if you need anything.",
+                'fr' => "De rien! 😊 Nous sommes toujours là pour vous aider.\n\nTapez *aide* si vous avez besoin de quelque chose."
+            ];
+            return $responses[$lang] ?? $responses['en'];
+        }
+
+        // Pricing questions (redirect to products)
+        if (preg_match('/(price|prices|cost|how much|كم سعر|كم ثمن|السعر|الأسعار|prix|coût|combien)/ui', $messageLower)) {
+            $responses = [
+                'ar' => "📋 لرؤية الأسعار، اكتب *منتجات* لتصفح جميع المنتجات المتاحة.\n\nأو أخبرني عن المنتج الذي تبحث عنه! 😊",
+                'en' => "📋 To see prices, type *products* to browse all available items.\n\nOr tell me what product you're looking for! 😊",
+                'fr' => "📋 Pour voir les prix, tapez *produits* pour parcourir tous les articles disponibles.\n\nOu dites-moi quel produit vous cherchez! 😊"
+            ];
+            return $responses[$lang] ?? $responses['en'];
+        }
+
+        // Payment method questions
+        if (preg_match('/(payment|pay|cash|card|credit|visa|كيف أدفع|طريقة الدفع|الدفع|كاش|بطاقة|فيزا|paiement|payer|carte|espèces)/ui', $messageLower)) {
+            $responses = [
+                'ar' => "💳 *طرق الدفع المتاحة:*\n\n✅ كاش عند التسليم\n✅ بطاقة ائتمان (Visa/Mastercard)\n✅ تحويل بنكي\n\n📞 للاستفسار: " . STORE_PHONE,
+                'en' => "💳 *Available Payment Methods:*\n\n✅ Cash on delivery\n✅ Credit card (Visa/Mastercard)\n✅ Bank transfer\n\n📞 Contact: " . STORE_PHONE,
+                'fr' => "💳 *Méthodes de paiement disponibles:*\n\n✅ Paiement à la livraison\n✅ Carte de crédit (Visa/Mastercard)\n✅ Virement bancaire\n\n📞 Contact: " . STORE_PHONE
+            ];
+            return $responses[$lang] ?? $responses['en'];
+        }
+
+        // Return/exchange policy
+        if (preg_match('/(return|exchange|refund|استرجاع|استبدال|إرجاع|تبديل|retour|échange|remboursement)/ui', $messageLower)) {
+            $responses = [
+                'ar' => "🔄 *سياسة الاسترجاع والاستبدال:*\n\nيمكنك استرجاع أو استبدال المنتجات خلال 7 أيام من الشراء بشرط:\n✅ المنتج في حالته الأصلية\n✅ الفاتورة موجودة\n\n📞 للمزيد من المعلومات: " . STORE_PHONE,
+                'en' => "🔄 *Return & Exchange Policy:*\n\nYou can return or exchange products within 7 days of purchase if:\n✅ Product is in original condition\n✅ Receipt is available\n\n📞 For more info: " . STORE_PHONE,
+                'fr' => "🔄 *Politique de retour et d'échange:*\n\nVous pouvez retourner ou échanger des produits dans les 7 jours suivant l'achat si:\n✅ Le produit est en état original\n✅ Le reçu est disponible\n\n📞 Pour plus d'infos: " . STORE_PHONE
+            ];
+            return $responses[$lang] ?? $responses['en'];
+        }
+
+        // Discount/sale questions
+        if (preg_match('/(discount|sale|offer|promotion|خصم|تخفيض|عرض|تخفيضات|réduction|solde|promotion|offre)/ui', $messageLower)) {
+            $responses = [
+                'ar' => "🎉 *العروض والتخفيضات:*\n\nلدينا عروض خاصة على بعض المنتجات!\n\nاكتب *منتجات* لرؤية جميع المنتجات المتاحة أو اتصل بنا على:\n📞 " . STORE_PHONE,
+                'en' => "🎉 *Offers & Discounts:*\n\nWe have special offers on selected products!\n\nType *products* to see all available items or contact us at:\n📞 " . STORE_PHONE,
+                'fr' => "🎉 *Offres et réductions:*\n\nNous avons des offres spéciales sur des produits sélectionnés!\n\nTapez *produits* pour voir tous les articles ou contactez-nous au:\n📞 " . STORE_PHONE
+            ];
+            return $responses[$lang] ?? $responses['en'];
+        }
+
+        // School supplies / Back to school
+        if (preg_match('/(school|supplies|stationery|قرطاسية|مدرسة|مدرسية|أدوات مدرسية|scolaire|fournitures|école)/ui', $messageLower)) {
+            $responses = [
+                'ar' => "🎒 *القرطاسية والأدوات المدرسية:*\n\nلدينا جميع الأدوات المدرسية:\n✏️ دفاتر وكراسات\n🖊️ أقلام بأنواعها\n📐 أدوات هندسية\n🎨 أدوات رسم وتلوين\n📚 كتب مدرسية\n\nاكتب *منتجات* لرؤية المتاح!",
+                'en' => "🎒 *School Supplies & Stationery:*\n\nWe have all school supplies:\n✏️ Notebooks & copybooks\n🖊️ All types of pens\n📐 Geometry tools\n🎨 Art & coloring supplies\n📚 School books\n\nType *products* to browse!",
+                'fr' => "🎒 *Fournitures scolaires:*\n\nNous avons toutes les fournitures scolaires:\n✏️ Cahiers\n🖊️ Tous types de stylos\n📐 Outils de géométrie\n🎨 Fournitures d'art\n📚 Livres scolaires\n\nTapez *produits* pour parcourir!"
+            ];
+            return $responses[$lang] ?? $responses['en'];
+        }
+
+        // Books/reading
+        if (preg_match('/(book|books|novel|reading|كتاب|كتب|رواية|قراءة|livre|livres|roman|lecture)/ui', $messageLower)) {
+            $responses = [
+                'ar' => "📚 *الكتب والروايات:*\n\nلدينا تشكيلة واسعة من:\n📖 كتب عربية وأجنبية\n📘 كتب مدرسية وجامعية\n📗 روايات وقصص\n📙 كتب أطفال\n\nأخبرني عن الكتاب الذي تبحث عنه أو اكتب *منتجات*",
+                'en' => "📚 *Books & Novels:*\n\nWe have a wide selection of:\n📖 Arabic & foreign books\n📘 School & university books\n📗 Novels & stories\n📙 Children's books\n\nTell me what you're looking for or type *products*",
+                'fr' => "📚 *Livres et romans:*\n\nNous avons une large sélection de:\n📖 Livres arabes et étrangers\n📘 Livres scolaires et universitaires\n📗 Romans et histoires\n📙 Livres pour enfants\n\nDites-moi ce que vous cherchez ou tapez *produits*"
+            ];
+            return $responses[$lang] ?? $responses['en'];
+        }
+
+        // Gift items
+        if (preg_match('/(gift|present|هدية|هدايا|cadeau|cadeaux)/ui', $messageLower)) {
+            $responses = [
+                'ar' => "🎁 *الهدايا:*\n\nلدينا أفكار هدايا رائعة:\n🎨 أدوات فنية\n📔 دفاتر فاخرة\n🖊️ أقلام راقية\n📚 كتب مميزة\n\nأخبرني عن المناسبة وسأساعدك في الاختيار!",
+                'en' => "🎁 *Gifts:*\n\nWe have great gift ideas:\n🎨 Art supplies\n📔 Premium notebooks\n🖊️ Elegant pens\n📚 Special books\n\nTell me the occasion and I'll help you choose!",
+                'fr' => "🎁 *Cadeaux:*\n\nNous avons de superbes idées cadeaux:\n🎨 Fournitures d'art\n📔 Cahiers premium\n🖊️ Stylos élégants\n📚 Livres spéciaux\n\nDites-moi l'occasion et je vous aiderai à choisir!"
+            ];
+            return $responses[$lang] ?? $responses['en'];
+        }
+
         // No store info question detected
         return null;
     }
@@ -379,6 +482,9 @@ class MessageController {
      * Quick product search (NO AI, direct database search)
      */
     private function quickProductSearch($customerId, $message, $lang) {
+        // Normalize Arabic letter "أ" to Latin "a" for product codes like "أ4" -> "a4", "أ5" -> "a5"
+        $message = preg_replace('/[أا](\d)/u', 'a$1', $message);
+
         // Extract search keywords (remove common words - use word boundaries to avoid partial matches)
         // First, remove multi-word phrases
         $cleanMessage = preg_replace(
@@ -428,11 +534,62 @@ class MessageController {
             'أقلام' => 'pen',
             'كراس' => 'cahier',
             'دفتر' => 'cahier',
+            'دفاتر' => 'cahier',
             'كتاب' => 'livre',
+            'ورق' => 'paper',
+            'أورق' => 'paper',
+            'ورقة' => 'paper',
+            'أوراق' => 'paper',
             'محاية' => 'eraser',
             'ممحاة' => 'eraser',
             'مسطرة' => 'ruler',
             'حقيبة' => 'bag',
+            'شنطة' => 'bag',
+            'مقلمة' => 'pencil case',
+            'برواز' => 'frame',
+            'إطار' => 'frame',
+            'براويز' => 'frame',
+            'لعبة' => 'toy',
+            'ألعاب' => 'toy',
+            'ألوان' => 'color',
+            'تلوين' => 'coloring',
+            'رسم' => 'drawing',
+            'مبراة' => 'sharpener',
+            'مشبك' => 'clip',
+            'دباسة' => 'stapler',
+            'لاصق' => 'glue',
+            'صمغ' => 'glue',
+            'شريط' => 'tape',
+            'مقص' => 'scissors',
+            'مقصات' => 'scissors',
+            'فرشاة' => 'brush',
+            'ألوان مائية' => 'watercolor',
+            'أقلام رصاص' => 'pencil',
+            'قلم رصاص' => 'pencil',
+            'رصاص' => 'pencil',
+            'فلوماستر' => 'marker',
+            'ماركر' => 'marker',
+            'هايلايتر' => 'highlighter',
+            'ملف' => 'file folder',
+            'ملفات' => 'file folder',
+            'ورق ملاحظات' => 'notes sticky',
+            'ملاحظات' => 'notes',
+            'آلة حاسبة' => 'calculator',
+            'حاسبة' => 'calculator',
+            'مسدس' => 'glue gun',
+            'برجل' => 'compass',
+            'فرجار' => 'compass',
+            'منقلة' => 'protractor',
+            'كشكول' => 'spiral notebook',
+            'سبيرال' => 'spiral',
+            'ريشة' => 'feather pen',
+            'حبر' => 'ink',
+            'طابعة' => 'printer',
+            'ساعة' => 'watch clock',
+            'منبه' => 'alarm',
+            'تقويم' => 'calendar',
+            'أجندة' => 'agenda planner',
+            'مفكرة' => 'notebook planner',
             // Colors (Arabic)
             'أحمر' => 'red',
             'أزرق' => 'blue',
@@ -627,11 +784,15 @@ class MessageController {
         }
 
         // Search products with base term if we found a sort preference
+        $searchStart = microtime(true);
         if ($sortPreference && !empty($baseSearchTerm)) {
             $products = $this->productModel->search($baseSearchTerm, 100);
         } else {
             $products = $this->productModel->search($searchTerm, 100);
         }
+        $searchEnd = microtime(true);
+        $searchDuration = round(($searchEnd - $searchStart) * 1000, 2);
+        logMessage("⏱️ Database product search took {$searchDuration}ms for term: '{$searchTerm}'", 'DEBUG', WEBHOOK_LOG_FILE);
 
         if (empty($products)) {
             // No products found - return null to let AI handle it

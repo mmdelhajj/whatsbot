@@ -86,6 +86,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
             'CURRENCY' => $_POST['currency'] ?? 'LBP',
             'STORE_NAME' => $_POST['store_name'] ?? '',
             'STORE_LOCATION' => $_POST['store_location'] ?? '',
+            'STORE_LATITUDE' => $_POST['store_latitude'] ?? '34.00951559789577',
+            'STORE_LONGITUDE' => $_POST['store_longitude'] ?? '35.654434764102675',
             'STORE_PHONE' => $_POST['store_phone'] ?? '',
             'STORE_WEBSITE' => $_POST['store_website'] ?? '',
             'STORE_HOURS' => $_POST['store_hours'] ?? ''
@@ -120,24 +122,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
     }
 }
 
-// Load current settings
+// Load current settings directly from .env file (to avoid getenv cache issues)
+function loadEnvSettings() {
+    $envFile = dirname(__DIR__) . '/.env';
+    $settings = [];
+
+    if (file_exists($envFile)) {
+        $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        foreach ($lines as $line) {
+            if (strpos($line, '#') === 0) continue;
+            if (strpos($line, '=') === false) continue;
+
+            list($key, $value) = explode('=', $line, 2);
+            $key = trim($key);
+            $value = trim($value);
+            $settings[strtolower($key)] = $value;
+        }
+    }
+
+    return $settings;
+}
+
+$envSettings = loadEnvSettings();
+
 $currentSettings = [
-    'db_host' => env('DB_HOST', 'localhost'),
-    'db_name' => env('DB_NAME', 'whatsapp_bot'),
-    'db_user' => env('DB_USER', 'whatsapp_user'),
-    'db_pass' => env('DB_PASS', ''),
-    'brains_api_base' => env('BRAINS_API_BASE', ''),
-    'whatsapp_account_id' => env('WHATSAPP_ACCOUNT_ID', ''),
-    'whatsapp_send_secret' => env('WHATSAPP_SEND_SECRET', ''),
-    'webhook_secret' => env('WEBHOOK_SECRET', ''),
-    'anthropic_api_key' => env('ANTHROPIC_API_KEY', ''),
-    'timezone' => env('TIMEZONE', 'Asia/Beirut'),
-    'currency' => env('CURRENCY', 'LBP'),
-    'store_name' => env('STORE_NAME', ''),
-    'store_location' => env('STORE_LOCATION', ''),
-    'store_phone' => env('STORE_PHONE', ''),
-    'store_website' => env('STORE_WEBSITE', ''),
-    'store_hours' => env('STORE_HOURS', '')
+    'db_host' => $envSettings['db_host'] ?? 'localhost',
+    'db_name' => $envSettings['db_name'] ?? 'whatsapp_bot',
+    'db_user' => $envSettings['db_user'] ?? 'whatsapp_user',
+    'db_pass' => $envSettings['db_pass'] ?? '',
+    'brains_api_base' => $envSettings['brains_api_base'] ?? '',
+    'whatsapp_account_id' => $envSettings['whatsapp_account_id'] ?? '',
+    'whatsapp_send_secret' => $envSettings['whatsapp_send_secret'] ?? '',
+    'webhook_secret' => $envSettings['webhook_secret'] ?? '',
+    'anthropic_api_key' => $envSettings['anthropic_api_key'] ?? '',
+    'timezone' => $envSettings['timezone'] ?? 'Asia/Beirut',
+    'currency' => $envSettings['currency'] ?? 'LBP',
+    'store_name' => $envSettings['store_name'] ?? '',
+    'store_location' => $envSettings['store_location'] ?? '',
+    'store_latitude' => $envSettings['store_latitude'] ?? '34.00951559789577',
+    'store_longitude' => $envSettings['store_longitude'] ?? '35.654434764102675',
+    'store_phone' => $envSettings['store_phone'] ?? '',
+    'store_website' => $envSettings['store_website'] ?? '',
+    'store_hours' => $envSettings['store_hours'] ?? ''
 ];
 ?>
 <!DOCTYPE html>
@@ -313,6 +339,16 @@ $currentSettings = [
                         <label>Store Location</label>
                         <input type="text" name="store_location" value="<?= htmlspecialchars($currentSettings['store_location']) ?>">
                         <small>Physical address or city (e.g., Kfarhbab, Ghazir, Lebanon)</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Store Latitude</label>
+                        <input type="text" name="store_latitude" value="<?= htmlspecialchars($currentSettings['store_latitude']) ?>" placeholder="34.00951559789577">
+                        <small>GPS Latitude for Google Maps (e.g., 34.00951559789577)</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Store Longitude</label>
+                        <input type="text" name="store_longitude" value="<?= htmlspecialchars($currentSettings['store_longitude']) ?>" placeholder="35.654434764102675">
+                        <small>GPS Longitude for Google Maps (e.g., 35.654434764102675)</small>
                     </div>
                     <div class="form-group">
                         <label>Store Phone</label>

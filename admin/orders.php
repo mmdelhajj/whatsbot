@@ -262,7 +262,7 @@ $stats = $db->fetchOne("
                     <div class="order-header">
                         <div>
                             <div class="order-number"><?= htmlspecialchars($order['order_number']) ?></div>
-                            <div class="order-date">📅 <?= date('F d, Y • H:i', strtotime($order['created_at'])) ?></div>
+                            <div class="order-date">📅 <?= formatDateTime($order['created_at'], 'F d, Y • H:i') ?></div>
                         </div>
                         <span class="badge badge-<?= $order['status'] ?>">
                             <?= ucwords(str_replace('_', ' ', $order['status'])) ?>

@@ -287,7 +287,7 @@ $recentOrders = $orderModel->getAllWithCustomers(10);
                 <tbody>
                     <?php foreach ($recentMessages as $msg): ?>
                     <tr>
-                        <td><?= date('H:i', strtotime($msg['created_at'])) ?></td>
+                        <td><?= formatDateTime($msg['created_at'], 'H:i') ?></td>
                         <td><?= htmlspecialchars($msg['customer_name'] ?? $msg['phone']) ?></td>
                         <td>
                             <?php if ($msg['direction'] === 'RECEIVED'): ?>
@@ -330,7 +330,7 @@ $recentOrders = $orderModel->getAllWithCustomers(10);
                             ?>
                             <span class="badge badge-<?= $statusClass ?>"><?= $order['status'] ?></span>
                         </td>
-                        <td><?= date('Y-m-d H:i', strtotime($order['created_at'])) ?></td>
+                        <td><?= formatDateTime($order['created_at'], 'Y-m-d H:i') ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
