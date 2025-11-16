@@ -31,17 +31,19 @@ You should see output like:
 [2025-11-16 18:00:25] Sync completed successfully
 ```
 
-### 3. Set up cron job (runs every 4 hours)
+### 3. Set up cron job (runs every minute, but respects your interval setting)
 ```bash
 crontab -e
 ```
 
 Add this line at the bottom:
 ```
-0 */4 * * * /usr/bin/php /var/www/whatsbot/scripts/sync-brains.php >> /var/www/whatsbot/logs/sync.log 2>&1
+* * * * * /usr/bin/php /var/www/whatsbot/scripts/sync-brains.php >> /var/www/whatsbot/logs/sync.log 2>&1
 ```
 
 Save and exit (Ctrl+X, then Y, then Enter if using nano).
+
+**Note:** The cron runs every minute, but the script only syncs when the interval you set in Admin → Settings has passed. This allows you to change sync intervals from the admin panel without editing cron.
 
 ### 4. Verify cron job is installed
 ```bash
@@ -50,29 +52,30 @@ crontab -l
 
 ## Cron Schedule Explained
 
-`0 */4 * * *` means:
-- Run at minute 0 (top of the hour)
-- Every 4 hours
-- Every day
+`* * * * *` means:
+- Run every minute
 
-So it runs at: **12:00 AM, 4:00 AM, 8:00 AM, 12:00 PM, 4:00 PM, 8:00 PM**
+The script itself checks your interval setting (Admin → Settings → Sync Interval) and only syncs when enough time has passed.
 
-## Alternative Schedules
+## Changing Sync Interval
 
-### Every 6 hours
-```
-0 */6 * * * /usr/bin/php /var/www/whatsbot/scripts/sync-brains.php >> /var/www/whatsbot/logs/sync.log 2>&1
-```
+You don't need to edit the cron job! Just:
+1. Go to **Admin → Settings**
+2. Scroll to **"🔄 Automatic Sync Settings"**
+3. Select your desired interval:
+   - Every 1 Minute
+   - Every 5 Minutes
+   - Every 15 Minutes
+   - Every 30 Minutes
+   - Every 1 Hour
+   - Every 2 Hours
+   - Every 4 Hours (Recommended)
+   - Every 6 Hours
+   - Every 12 Hours
+   - Once Daily
+4. Click **Save All Settings**
 
-### Every 2 hours
-```
-0 */2 * * * /usr/bin/php /var/www/whatsbot/scripts/sync-brains.php >> /var/www/whatsbot/logs/sync.log 2>&1
-```
-
-### Once per day at 2:00 AM
-```
-0 2 * * * /usr/bin/php /var/www/whatsbot/scripts/sync-brains.php >> /var/www/whatsbot/logs/sync.log 2>&1
-```
+The change takes effect immediately!
 
 ## View Sync Logs
 

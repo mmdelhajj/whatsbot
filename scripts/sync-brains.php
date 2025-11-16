@@ -10,6 +10,7 @@ require_once dirname(__DIR__) . '/config/config.php';
 
 // Log start
 $logFile = dirname(__DIR__) . '/logs/sync.log';
+$lastSyncFile = dirname(__DIR__) . '/logs/last-sync.txt';
 $logDir = dirname($logFile);
 if (!is_dir($logDir)) {
     mkdir($logDir, 0777, true);
@@ -22,8 +23,27 @@ function logSync($message) {
     echo "[{$timestamp}] {$message}\n";
 }
 
+// Get sync interval from .env (in minutes)
+$syncInterval = intval(getenv('SYNC_INTERVAL') ?: 240); // Default: 240 minutes (4 hours)
+
+// Check last sync time
+$lastSyncTime = 0;
+if (file_exists($lastSyncFile)) {
+    $lastSyncTime = intval(file_get_contents($lastSyncFile));
+}
+
+$currentTime = time();
+$timeSinceLastSync = ($currentTime - $lastSyncTime) / 60; // Convert to minutes
+
+// Only sync if enough time has passed
+if ($timeSinceLastSync < $syncInterval && $lastSyncTime > 0) {
+    $nextSyncIn = ceil($syncInterval - $timeSinceLastSync);
+    logSync("Skipping sync - Last sync was " . round($timeSinceLastSync, 1) . " minutes ago. Next sync in {$nextSyncIn} minutes (Interval: {$syncInterval} min)");
+    exit(0);
+}
+
 logSync("========================================");
-logSync("Starting Brains ERP Sync");
+logSync("Starting Brains ERP Sync (Interval: {$syncInterval} min)");
 
 $db = Database::getInstance();
 $brainsAPI = new BrainsAPI();
@@ -191,6 +211,9 @@ try {
 } catch (Exception $e) {
     logSync("ERROR syncing customers: " . $e->getMessage());
 }
+
+// Save current sync time
+file_put_contents($lastSyncFile, time());
 
 logSync("Sync completed successfully");
 logSync("========================================");

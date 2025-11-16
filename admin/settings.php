@@ -85,7 +85,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
             'STORE_LONGITUDE' => $_POST['store_longitude'] ?? '35.654434764102675',
             'STORE_PHONE' => $_POST['store_phone'] ?? '',
             'STORE_WEBSITE' => $_POST['store_website'] ?? '',
-            'STORE_HOURS' => $_POST['store_hours'] ?? ''
+            'STORE_HOURS' => $_POST['store_hours'] ?? '',
+            'SYNC_INTERVAL' => $_POST['sync_interval'] ?? '240'
         ];
 
         foreach ($updates as $key => $value) {
@@ -153,7 +154,8 @@ $currentSettings = [
     'store_longitude' => $envSettings['store_longitude'] ?? '35.654434764102675',
     'store_phone' => $envSettings['store_phone'] ?? '',
     'store_website' => $envSettings['store_website'] ?? '',
-    'store_hours' => $envSettings['store_hours'] ?? ''
+    'store_hours' => $envSettings['store_hours'] ?? '',
+    'sync_interval' => $envSettings['sync_interval'] ?? '240'
 ];
 ?>
 <!DOCTYPE html>
@@ -336,6 +338,26 @@ $currentSettings = [
                         <input type="text" name="currency" value="<?= htmlspecialchars($currentSettings['currency']) ?>" maxlength="10" required>
                         <small>Currency code (e.g., LBP, USD, EUR)</small>
                     </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>🔄 Automatic Sync Settings</h2>
+                <div class="form-group">
+                    <label>Sync Interval (Products & Customers from Brains)</label>
+                    <select name="sync_interval">
+                        <option value="1" <?= $currentSettings['sync_interval'] == '1' ? 'selected' : '' ?>>Every 1 Minute</option>
+                        <option value="5" <?= $currentSettings['sync_interval'] == '5' ? 'selected' : '' ?>>Every 5 Minutes</option>
+                        <option value="15" <?= $currentSettings['sync_interval'] == '15' ? 'selected' : '' ?>>Every 15 Minutes</option>
+                        <option value="30" <?= $currentSettings['sync_interval'] == '30' ? 'selected' : '' ?>>Every 30 Minutes</option>
+                        <option value="60" <?= $currentSettings['sync_interval'] == '60' ? 'selected' : '' ?>>Every 1 Hour</option>
+                        <option value="120" <?= $currentSettings['sync_interval'] == '120' ? 'selected' : '' ?>>Every 2 Hours</option>
+                        <option value="240" <?= $currentSettings['sync_interval'] == '240' ? 'selected' : '' ?>>Every 4 Hours (Recommended)</option>
+                        <option value="360" <?= $currentSettings['sync_interval'] == '360' ? 'selected' : '' ?>>Every 6 Hours</option>
+                        <option value="720" <?= $currentSettings['sync_interval'] == '720' ? 'selected' : '' ?>>Every 12 Hours</option>
+                        <option value="1440" <?= $currentSettings['sync_interval'] == '1440' ? 'selected' : '' ?>>Once Daily</option>
+                    </select>
+                    <small>How often to automatically sync products and customers from Brains ERP. Requires cron job to be set up.</small>
                 </div>
             </div>
 
