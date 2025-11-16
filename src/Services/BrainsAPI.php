@@ -20,7 +20,14 @@ class BrainsAPI {
      */
     public function fetchItems() {
         $url = $this->baseUrl . '/items';
-        return $this->makeRequest($url);
+        $response = $this->makeRequest($url);
+
+        // Extract Content array from response (same as fetchAccounts)
+        if (isset($response['Success']) && $response['Success'] && isset($response['Content'])) {
+            return $response['Content'];
+        }
+
+        return [];
     }
 
     /**

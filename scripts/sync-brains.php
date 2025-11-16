@@ -66,10 +66,11 @@ try {
     $skipped = 0;
 
     foreach ($items as $item) {
-        $itemCode = $item['ItemCode'] ?? null;
-        $itemName = $item['ItemName'] ?? null;
+        // Brains API uses: SKU, Name, StockQuantity, Price
+        $itemCode = $item['SKU'] ?? ($item['ItemCode'] ?? null);
+        $itemName = $item['Name'] ?? ($item['ItemName'] ?? null);
         $price = floatval($item['Price'] ?? 0);
-        $stockQty = intval($item['StockQty'] ?? 0);
+        $stockQty = intval($item['StockQuantity'] ?? ($item['StockQty'] ?? 0));
         $category = $item['Category'] ?? '';
         $imageUrl = $item['ImageURL'] ?? '';
 
