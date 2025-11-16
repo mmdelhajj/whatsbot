@@ -22,6 +22,8 @@ class Database {
                     PDO::ATTR_EMULATE_PREPARES => false
                 ]
             );
+            // Explicitly set charset to ensure proper Arabic/UTF-8 handling
+            $this->connection->exec("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
         } catch (PDOException $e) {
             error_log("Database connection failed: " . $e->getMessage());
             throw new Exception("Database connection failed");
