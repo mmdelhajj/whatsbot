@@ -1,0 +1,196 @@
+#!/usr/bin/env php
+<?php
+/**
+ * Automatic Sync Script - Brains ERP
+ * Syncs products and customers from Brains ERP
+ * Designed to run via cron job
+ */
+
+require_once dirname(__DIR__) . '/config/config.php';
+
+// Log start
+$logFile = dirname(__DIR__) . '/logs/sync.log';
+$logDir = dirname($logFile);
+if (!is_dir($logDir)) {
+    mkdir($logDir, 0777, true);
+}
+
+function logSync($message) {
+    global $logFile;
+    $timestamp = date('Y-m-d H:i:s');
+    file_put_contents($logFile, "[{$timestamp}] {$message}\n", FILE_APPEND);
+    echo "[{$timestamp}] {$message}\n";
+}
+
+logSync("========================================");
+logSync("Starting Brains ERP Sync");
+
+$db = Database::getInstance();
+$brainsAPI = new BrainsAPI();
+
+// ======================
+// SYNC PRODUCTS
+// ======================
+try {
+    logSync("Fetching products from Brains...");
+    $items = $brainsAPI->fetchItems();
+
+    if (!$items || !is_array($items)) {
+        throw new Exception("Failed to fetch products from Brains API");
+    }
+
+    logSync("Found " . count($items) . " products");
+
+    $created = 0;
+    $updated = 0;
+    $skipped = 0;
+
+    foreach ($items as $item) {
+        $itemCode = $item['ItemCode'] ?? null;
+        $itemName = $item['ItemName'] ?? null;
+        $price = floatval($item['Price'] ?? 0);
+        $stockQty = intval($item['StockQty'] ?? 0);
+        $category = $item['Category'] ?? '';
+        $imageUrl = $item['ImageURL'] ?? '';
+
+        if (!$itemCode || !$itemName) {
+            $skipped++;
+            continue;
+        }
+
+        $existingProduct = $db->fetchOne(
+            "SELECT * FROM product_info WHERE item_code = ?",
+            [$itemCode]
+        );
+
+        if ($existingProduct) {
+            $db->update('product_info', [
+                'item_name' => $itemName,
+                'price' => $price,
+                'stock_quantity' => $stockQty,
+                'category' => $category,
+                'image_url' => $imageUrl
+            ], 'item_code = :code', ['code' => $itemCode]);
+            $updated++;
+        } else {
+            $db->insert('product_info', [
+                'item_code' => $itemCode,
+                'item_name' => $itemName,
+                'price' => $price,
+                'stock_quantity' => $stockQty,
+                'category' => $category,
+                'image_url' => $imageUrl
+            ]);
+            $created++;
+        }
+    }
+
+    logSync("Products: Created={$created}, Updated={$updated}, Skipped={$skipped}");
+
+} catch (Exception $e) {
+    logSync("ERROR syncing products: " . $e->getMessage());
+}
+
+// ======================
+// SYNC CUSTOMERS
+// ======================
+try {
+    logSync("Fetching customers from Brains...");
+    $accounts = $brainsAPI->fetchAccounts();
+
+    if (!$accounts || !is_array($accounts)) {
+        throw new Exception("Failed to fetch accounts from Brains API");
+    }
+
+    logSync("Found " . count($accounts) . " accounts");
+
+    $created = 0;
+    $updated = 0;
+    $skipped = 0;
+
+    foreach ($accounts as $account) {
+        $accountCode = $account['AccountCode'] ?? null;
+        $customerName = $account['Description'] ?? null;
+        $telephone = $account['Telephone'] ?? '';
+        $email = $account['Email'] ?? '';
+        $address = $account['Address'] ?? '';
+
+        if (!$customerName) {
+            continue;
+        }
+
+        // Clean up phone number
+        $phoneNumbers = [];
+        $searchText = $telephone . ' ' . $customerName;
+        $cleanName = preg_replace('/\d{2}[\/\s]*\d{3}[\/\s]*\d{3}|\d{8}/', '', $customerName);
+        $cleanName = trim($cleanName);
+        $cleanName = rtrim($cleanName, '. ');
+
+        if (preg_match_all('/(\d{2}\/\d{6}|\d{2}\/\d{3}\s*\d{3}|\d{8})/', $searchText, $matches)) {
+            foreach ($matches[0] as $phone) {
+                $cleanPhone = preg_replace('/[^0-9]/', '', $phone);
+
+                if (strlen($cleanPhone) == 8) {
+                    $phoneNumbers[] = $cleanPhone;
+                } elseif (strlen($cleanPhone) == 6) {
+                    $phoneNumbers[] = '0' . $cleanPhone;
+                }
+            }
+        }
+
+        $phoneNumbers = array_unique($phoneNumbers);
+
+        if (empty($phoneNumbers)) {
+            $skipped++;
+            continue;
+        }
+
+        foreach ($phoneNumbers as $phone) {
+            $existingCustomer = $db->fetchOne(
+                "SELECT * FROM customers WHERE phone = ?",
+                [$phone]
+            );
+
+            if ($existingCustomer) {
+                $updateData = [];
+
+                if (empty($existingCustomer['name']) || $existingCustomer['name'] !== $cleanName) {
+                    $updateData['name'] = $cleanName;
+                }
+                if ($email && empty($existingCustomer['email'])) {
+                    $updateData['email'] = $email;
+                }
+                if ($address && empty($existingCustomer['address'])) {
+                    $updateData['address'] = $address;
+                }
+                if (!empty($accountCode) && empty($existingCustomer['brains_account_code'])) {
+                    $updateData['brains_account_code'] = $accountCode;
+                }
+
+                if (!empty($updateData)) {
+                    $db->update('customers', $updateData, 'id = :id', ['id' => $existingCustomer['id']]);
+                    $updated++;
+                }
+            } else {
+                $db->insert('customers', [
+                    'phone' => $phone,
+                    'name' => $cleanName,
+                    'email' => $email ?: null,
+                    'address' => $address ?: null,
+                    'brains_account_code' => $accountCode
+                ]);
+                $created++;
+            }
+
+            break;
+        }
+    }
+
+    logSync("Customers: Created={$created}, Updated={$updated}, Skipped={$skipped}");
+
+} catch (Exception $e) {
+    logSync("ERROR syncing customers: " . $e->getMessage());
+}
+
+logSync("Sync completed successfully");
+logSync("========================================");

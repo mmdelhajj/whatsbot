@@ -207,6 +207,7 @@ $stats = $db->fetchOne("
             
             
             <a href="/admin/import-customers.php">Import Customers</a>
+            <a href="/admin/import-products.php">Import Products</a>
             <a href="/admin/settings.php">Settings</a>
             <a href="/admin/test-apis.php">API Tests</a>
         </div>
