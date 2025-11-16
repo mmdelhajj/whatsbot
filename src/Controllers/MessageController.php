@@ -5,6 +5,7 @@
  */
 
 class MessageController {
+    private $db;
     private $customerModel;
     private $messageModel;
     private $productModel;
@@ -17,6 +18,7 @@ class MessageController {
     const PRODUCTS_PER_PAGE = 10;
 
     public function __construct() {
+        $this->db = Database::getInstance();
         $this->customerModel = new Customer();
         $this->messageModel = new Message();
         $this->productModel = new Product();
@@ -202,77 +204,19 @@ class MessageController {
             return $responses[$lang] ?? $responses['en'];
         }
 
-        if ($this->isHoursQuery($messageLower)) {
-            $responses = [
-                'en' => "📅 *Opening Hours:*\n\n" .
-                        "Mon-Fri: 7:00 AM - 8:00 PM\n" .
-                        "Saturday: 8:00 AM - 7:00 PM\n" .
-                        "Sunday: Open\n\n" .
-                        "Visit our website: store.libmemoires.com",
-                'fr' => "📅 *Horaires d'ouverture:*\n\n" .
-                        "Lun-Ven: 7h00 - 20h00\n" .
-                        "Samedi: 8h00 - 19h00\n" .
-                        "Dimanche: Ouvert\n\n" .
-                        "Visitez notre site: store.libmemoires.com",
-                'ar' => "📅 *ساعات العمل:*\n\n" .
-                        "الإثنين-الجمعة: 7:00 صباحاً - 8:00 مساءً\n" .
-                        "السبت: 8:00 صباحاً - 7:00 مساءً\n" .
-                        "الأحد: مفتوح\n\n" .
-                        "زوروا موقعنا: store.libmemoires.com"
-            ];
-            return $responses[$lang] ?? $responses['en'];
-        }
-
-        if ($this->isLocationQuery($messageLower)) {
-            $mapsLink = "https://google.com/maps?q=" . STORE_LATITUDE . "," . STORE_LONGITUDE;
-            $responses = [
-                'en' => "📍 *Location:*\n\n" .
-                        STORE_NAME . "\n" .
-                        STORE_LOCATION . " 🇱🇧\n\n" .
-                        "🗺️ Google Maps: {$mapsLink}\n\n" .
-                        "📞 Phone: " . STORE_PHONE . "\n" .
-                        "🌐 Website: " . STORE_WEBSITE,
-                'fr' => "📍 *Localisation:*\n\n" .
-                        STORE_NAME . "\n" .
-                        STORE_LOCATION . " 🇱🇧\n\n" .
-                        "🗺️ Google Maps: {$mapsLink}\n\n" .
-                        "📞 Téléphone: " . STORE_PHONE . "\n" .
-                        "🌐 Site web: " . STORE_WEBSITE,
-                'ar' => "📍 *الموقع:*\n\n" .
-                        STORE_NAME . "\n" .
-                        STORE_LOCATION . " 🇱🇧\n\n" .
-                        "🗺️ خرائط جوجل: {$mapsLink}\n\n" .
-                        "📞 هاتف: " . STORE_PHONE . "\n" .
-                        "🌐 موقع: " . STORE_WEBSITE
-            ];
-            return $responses[$lang] ?? $responses['en'];
-        }
-
-        if ($this->isDeliveryQuery($messageLower)) {
-            $responses = [
-                'en' => "🚚 *Delivery Information:*\n\n" .
-                        "We deliver through Aramex to any area in Lebanon!\n\n" .
-                        "⏱️ Delivery time: Approximately 3 days\n" .
-                        "📦 We'll notify you when ready for pickup\n\n" .
-                        "Type *products* to browse our items! 😊",
-                'fr' => "🚚 *Information de livraison:*\n\n" .
-                        "Nous livrons via Aramex dans toutes les régions du Liban!\n\n" .
-                        "⏱️ Délai: Environ 3 jours\n" .
-                        "📦 Nous vous informerons quand c'est prêt\n\n" .
-                        "Tapez *produits* pour voir nos articles! 😊",
-                'ar' => "🚚 *معلومات التوصيل:*\n\n" .
-                        "نوصل عبر أرامكس لأي منطقة في لبنان!\n\n" .
-                        "⏱️ وقت التوصيل: حوالي 3 أيام\n" .
-                        "📦 سنخبرك عندما يكون جاهزاً للاستلام\n\n" .
-                        "اكتب *منتجات* لتصفح منتجاتنا! 😊"
-            ];
-            return $responses[$lang] ?? $responses['en'];
-        }
+        // NOTE: Hours, location, and delivery queries are now handled by checkStoreInfoQuestions()
+        // This ensures they use dynamic values from .env configuration and better multilingual patterns
 
         // PRIORITY: Check store info questions BEFORE state routing (so they work in any state)
         $storeInfoResponse = $this->checkStoreInfoQuestions($message, $lang);
         if ($storeInfoResponse !== null) {
             return $storeInfoResponse;
+        }
+
+        // PRIORITY: Check custom Q&A from admin panel
+        $customQAResponse = $this->checkCustomQA($message, $lang);
+        if ($customQAResponse !== null) {
+            return $customQAResponse;
         }
 
         // State-based routing
@@ -475,6 +419,54 @@ class MessageController {
         }
 
         // No store info question detected
+        return null;
+    }
+
+    /**
+     * Check custom Q&A from admin panel
+     */
+    private function checkCustomQA($message, $lang) {
+        $messageLower = mb_strtolower($message, 'UTF-8');
+
+        // Get all active custom Q&A entries from database
+        $qaEntries = $this->db->fetchAll(
+            "SELECT * FROM custom_qa WHERE is_active = 1 ORDER BY id DESC"
+        );
+
+        if (empty($qaEntries)) {
+            return null;
+        }
+
+        // Check each Q&A pattern
+        foreach ($qaEntries as $qa) {
+            $pattern = $qa['question_pattern'];
+
+            // Try to match the pattern (case-insensitive, unicode-safe)
+            if (preg_match('/' . $pattern . '/ui', $messageLower)) {
+                // Pattern matched! Return the appropriate language answer
+                $answer = null;
+
+                // Try to get answer in customer's language first
+                if ($lang === 'ar' && !empty($qa['answer_ar'])) {
+                    $answer = $qa['answer_ar'];
+                } elseif ($lang === 'en' && !empty($qa['answer_en'])) {
+                    $answer = $qa['answer_en'];
+                } elseif ($lang === 'fr' && !empty($qa['answer_fr'])) {
+                    $answer = $qa['answer_fr'];
+                }
+
+                // Fallback to any available language if preferred language not available
+                if (empty($answer)) {
+                    $answer = $qa['answer_en'] ?: $qa['answer_ar'] ?: $qa['answer_fr'];
+                }
+
+                if (!empty($answer)) {
+                    logMessage("Custom Q&A matched: pattern='{$pattern}', lang={$lang}", 'DEBUG');
+                    return $answer;
+                }
+            }
+        }
+
         return null;
     }
 
