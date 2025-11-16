@@ -1,6 +1,6 @@
 # Sensitive Configuration Files
-config/config.php
-config/database.php
+# config/config.php is now safe to commit (no secrets - uses .env)
+# config/database.php is now Database.php and safe to commit
 .env
 *.env
 
