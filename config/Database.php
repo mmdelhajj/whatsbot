@@ -95,4 +95,9 @@ class Database {
         $sql = "UPDATE {$table} SET {$setClause} WHERE {$where}";
         $this->query($sql, array_merge($data, $whereParams));
     }
+
+    public function delete($table, $where, $whereParams = []) {
+        $sql = "DELETE FROM {$table} WHERE {$where}";
+        $this->query($sql, $whereParams);
+    }
 }
