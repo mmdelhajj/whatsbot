@@ -85,13 +85,20 @@ try {
         );
 
         if ($existingProduct) {
-            $db->update('product_info', [
+            // Update product but preserve existing image_url if API doesn't provide one
+            $updateData = [
                 'item_name' => $itemName,
                 'price' => $price,
                 'stock_quantity' => $stockQty,
-                'category' => $category,
-                'image_url' => $imageUrl
-            ], 'item_code = :code', ['code' => $itemCode]);
+                'category' => $category
+            ];
+
+            // Only update image_url if API provides a non-empty value
+            if (!empty($imageUrl)) {
+                $updateData['image_url'] = $imageUrl;
+            }
+
+            $db->update('product_info', $updateData, 'item_code = :code', ['code' => $itemCode]);
             $updated++;
         } else {
             $db->insert('product_info', [

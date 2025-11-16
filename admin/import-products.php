@@ -58,14 +58,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_products'])) {
             );
 
             if ($existingProduct) {
-                // Update existing product
-                $db->update('product_info', [
+                // Update existing product but preserve local image_url if API doesn't provide one
+                $updateData = [
                     'item_name' => $itemName,
                     'price' => $price,
                     'stock_quantity' => $stockQty,
-                    'category' => $category,
-                    'image_url' => $imageUrl
-                ], 'item_code = :code', ['code' => $itemCode]);
+                    'category' => $category
+                ];
+
+                // Only update image_url if API provides a non-empty value
+                if (!empty($imageUrl)) {
+                    $updateData['image_url'] = $imageUrl;
+                }
+
+                $db->update('product_info', $updateData, 'item_code = :code', ['code' => $itemCode]);
                 $updated++;
             } else {
                 // Create new product
