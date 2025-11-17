@@ -388,8 +388,10 @@ class MessageController {
             return $responses[$lang] ?? $responses['en'];
         }
 
-        // School supplies / Back to school
-        if (preg_match('/(school|supplies|stationery|قرطاسية|مدرسة|مدرسية|أدوات مدرسية|scolaire|fournitures|école)/ui', $messageLower)) {
+        // School supplies / Back to school - only trigger for general supply questions, not specific searches
+        // Don't trigger if searching for specific books or items
+        if (preg_match('/\b(supplies|stationery|قرطاسية|أدوات مدرسية|fournitures)\b/ui', $messageLower) &&
+            !preg_match('/\b(math|science|english|french|arabic|history|geography|physics|chemistry|book|كتاب|livre)\b/ui', $messageLower)) {
             $responses = [
                 'ar' => "🎒 *القرطاسية والأدوات المدرسية:*\n\nلدينا جميع الأدوات المدرسية:\n✏️ دفاتر وكراسات\n🖊️ أقلام بأنواعها\n📐 أدوات هندسية\n🎨 أدوات رسم وتلوين\n📚 كتب مدرسية\n\nاكتب *منتجات* لرؤية المتاح!",
                 'en' => "🎒 *School Supplies & Stationery:*\n\nWe have all school supplies:\n✏️ Notebooks & copybooks\n🖊️ All types of pens\n📐 Geometry tools\n🎨 Art & coloring supplies\n📚 School books\n\nType *products* to browse!",
@@ -398,8 +400,10 @@ class MessageController {
             return $responses[$lang] ?? $responses['en'];
         }
 
-        // Books/reading
-        if (preg_match('/(book|books|novel|reading|كتاب|كتب|رواية|قراءة|livre|livres|roman|lecture)/ui', $messageLower)) {
+        // Books/reading - only trigger for general questions, not specific book searches
+        // Don't trigger if message has specific descriptors like "math book", "english book", etc.
+        if (preg_match('/\b(books|novels|reading|كتب|روايات|قراءة|livres|romans|lecture)\b/ui', $messageLower) &&
+            !preg_match('/\b(math|science|english|french|arabic|history|geography|physics|chemistry|grade|class|level|kg|eb|se|رياضيات|علوم|انجليزي|فرنسي|عربي|تاريخ|جغرافيا|فيزياء|كيمياء|صف|مستوى|mathématiques|sciences|anglais|français|arabe|histoire|géographie|physique|chimie|niveau|classe)\b/ui', $messageLower)) {
             $responses = [
                 'ar' => "📚 *الكتب والروايات:*\n\nلدينا تشكيلة واسعة من:\n📖 كتب عربية وأجنبية\n📘 كتب مدرسية وجامعية\n📗 روايات وقصص\n📙 كتب أطفال\n\nأخبرني عن الكتاب الذي تبحث عنه أو اكتب *منتجات*",
                 'en' => "📚 *Books & Novels:*\n\nWe have a wide selection of:\n📖 Arabic & foreign books\n📘 School & university books\n📗 Novels & stories\n📙 Children's books\n\nTell me what you're looking for or type *products*",
