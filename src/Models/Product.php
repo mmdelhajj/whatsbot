@@ -67,11 +67,15 @@ class Product {
             }
 
             // Build flexible pattern: "math book" → match "math" AND ("book" OR "books")
-            // This handles singular/plural variations
+            // This handles singular/plural variations using LIKE
             $flexibleConditions = [];
+            $flexibleParams = [];
             foreach ($words as $word) {
-                // Match word with optional 's' at the end (handles plurals)
-                $flexibleConditions[] = "(item_name REGEXP '[[:<:]]" . preg_quote($word, '/') . "s?[[:>:]]')";
+                // Match word OR word+'s' using LIKE (e.g., "book" matches "book" or "books")
+                $escapedWord = str_replace(['%', '_'], ['\%', '\_'], $word);
+                $flexibleConditions[] = "(item_name LIKE ? OR item_name LIKE ?)";
+                $flexibleParams[] = "% {$escapedWord} %";    // " book "
+                $flexibleParams[] = "% {$escapedWord}s %";   // " books "
             }
             $flexibleWhere = implode(' AND ', $flexibleConditions);
 
@@ -81,7 +85,7 @@ class Product {
                    AND stock_quantity > 0
                  ORDER BY item_name
                  LIMIT ?",
-                [$limit]
+                array_merge($flexibleParams, [$limit])
             );
 
             // If flexible match found results, return those
