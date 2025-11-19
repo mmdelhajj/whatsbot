@@ -16,6 +16,9 @@ class Product {
      * ONLY returns products IN STOCK
      */
     public function search($query, $limit = 10) {
+        // Debug logging to track search queries
+        logMessage("🔍 Product search called with query: '{$query}' (limit: {$limit})", 'DEBUG', WEBHOOK_LOG_FILE);
+
         // For short queries or exact codes, use LIKE (faster for exact matches)
         if (strlen($query) < 3 || preg_match('/^\d+$/', $query)) {
             $searchTerm = "%{$query}%";
@@ -40,6 +43,7 @@ class Product {
         $words = explode(' ', trim($query));
         if (count($words) > 1) {
             // Multi-word query: FIRST try exact phrase in item_name only (strict)
+            logMessage("🎯 Multi-word search: trying exact phrase match for '{$query}'", 'DEBUG', WEBHOOK_LOG_FILE);
             $phraseResults = $this->db->fetchAll(
                 "SELECT * FROM product_info
                  WHERE item_name LIKE ?
@@ -51,8 +55,11 @@ class Product {
 
             // If we found exact phrase matches in names, return those only
             if (!empty($phraseResults)) {
+                logMessage("✅ Found " . count($phraseResults) . " exact phrase matches - returning strict results", 'DEBUG', WEBHOOK_LOG_FILE);
                 return $phraseResults;
             }
+
+            logMessage("⚠️ No exact phrase matches - falling back to BOOLEAN MODE", 'DEBUG', WEBHOOK_LOG_FILE);
 
             // No exact phrase matches - fall back to BOOLEAN MODE (searches name + description)
             $booleanQuery = '+' . implode(' +', $words);
