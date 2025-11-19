@@ -40,16 +40,21 @@ class Product {
         $words = explode(' ', trim($query));
         if (count($words) > 1) {
             // Multi-word query: require ALL words (e.g., "coloring book" becomes "+coloring +book")
+            // PRIORITIZE exact phrase matches in item_name over scattered words
             $booleanQuery = '+' . implode(' +', $words);
             return $this->db->fetchAll(
-                "SELECT *, MATCH(item_name, description) AGAINST(? IN BOOLEAN MODE) as relevance
+                "SELECT *,
+                    CASE
+                        WHEN item_name LIKE ? THEN 100
+                        ELSE MATCH(item_name, description) AGAINST(? IN BOOLEAN MODE)
+                    END as relevance
                  FROM product_info
                  WHERE (MATCH(item_name, description) AGAINST(? IN BOOLEAN MODE)
                     OR item_code LIKE ?)
                    AND stock_quantity > 0
                  ORDER BY relevance DESC, item_name
                  LIMIT ?",
-                [$booleanQuery, $booleanQuery, "%{$query}%", $limit]
+                ["%{$query}%", $booleanQuery, $booleanQuery, "%{$query}%", $limit]
             );
         }
 
