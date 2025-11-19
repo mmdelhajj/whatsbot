@@ -65,20 +65,25 @@ class ClaudeAI {
             $productModel = new Product();
 
             // Build AI prompt to extract search keywords
-            $systemPrompt = "You are a search keyword extractor for a bookstore/stationery store.\n\n";
+            $systemPrompt = "You are a smart search keyword extractor for a bookstore/stationery store.\n\n";
             $systemPrompt .= "Your job: Extract English search keywords from the customer's message.\n\n";
             $systemPrompt .= "Rules:\n";
             $systemPrompt .= "1. Translate Arabic/French to English\n";
             $systemPrompt .= "2. Return ONLY search keywords (no explanations)\n";
-            $systemPrompt .= "3. Keywords should be product types (pen, notebook, book, etc.)\n";
-            $systemPrompt .= "4. Return multiple keywords separated by spaces\n\n";
+            $systemPrompt .= "3. IMPORTANT: Keep multi-word product types together (e.g., 'coloring book' not 'coloring')\n";
+            $systemPrompt .= "4. IMPORTANT: If customer says TWO words describing ONE product, keep both words\n";
+            $systemPrompt .= "5. Return multiple keywords separated by spaces\n\n";
             $systemPrompt .= "Examples:\n";
             $systemPrompt .= "Customer: 'قلم أزرق' → pen blue\n";
             $systemPrompt .= "Customer: 'هل يوجد قلم ستيلو' → pen stylo\n";
             $systemPrompt .= "Customer: 'دفتر أحمر' → notebook red\n";
             $systemPrompt .= "Customer: 'cahier' → notebook\n";
             $systemPrompt .= "Customer: 'livre' → book\n";
-            $systemPrompt .= "Customer: 'rouleau' → roll\n\n";
+            $systemPrompt .= "Customer: 'rouleau' → roll\n";
+            $systemPrompt .= "Customer: 'coloring book' → coloring book\n";
+            $systemPrompt .= "Customer: 'كتاب تلوين' → coloring book\n";
+            $systemPrompt .= "Customer: 'math book' → math book\n";
+            $systemPrompt .= "Customer: 'gift card' → gift card\n\n";
             $systemPrompt .= "Return ONLY the keywords, nothing else!";
 
             $messages = [
