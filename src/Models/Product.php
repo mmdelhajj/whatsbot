@@ -53,13 +53,44 @@ class Product {
                 ["%{$query}%", $limit]
             );
 
-            // If we found exact phrase matches in names, return those only
-            if (!empty($phraseResults)) {
+            // If we found good exact phrase matches (3+), return those
+            if (count($phraseResults) >= 3) {
                 logMessage("✅ Found " . count($phraseResults) . " exact phrase matches - returning strict results", 'DEBUG', WEBHOOK_LOG_FILE);
                 return $phraseResults;
             }
 
-            logMessage("⚠️ No exact phrase matches - falling back to BOOLEAN MODE", 'DEBUG', WEBHOOK_LOG_FILE);
+            // If we found 1-2 exact matches, try flexible plural matching to find more
+            if (count($phraseResults) > 0 && count($phraseResults) < 3) {
+                logMessage("⚠️ Only " . count($phraseResults) . " exact matches - trying flexible plural match", 'DEBUG', WEBHOOK_LOG_FILE);
+            } else {
+                logMessage("⚠️ No exact phrase matches - trying flexible plural match", 'DEBUG', WEBHOOK_LOG_FILE);
+            }
+
+            // Build flexible pattern: "math book" → match "math" AND ("book" OR "books")
+            // This handles singular/plural variations
+            $flexibleConditions = [];
+            foreach ($words as $word) {
+                // Match word with optional 's' at the end (handles plurals)
+                $flexibleConditions[] = "(item_name REGEXP '[[:<:]]" . preg_quote($word, '/') . "s?[[:>:]]')";
+            }
+            $flexibleWhere = implode(' AND ', $flexibleConditions);
+
+            $flexibleResults = $this->db->fetchAll(
+                "SELECT * FROM product_info
+                 WHERE {$flexibleWhere}
+                   AND stock_quantity > 0
+                 ORDER BY item_name
+                 LIMIT ?",
+                [$limit]
+            );
+
+            // If flexible match found results, return those
+            if (!empty($flexibleResults)) {
+                logMessage("✅ Found " . count($flexibleResults) . " flexible matches - returning those", 'DEBUG', WEBHOOK_LOG_FILE);
+                return $flexibleResults;
+            }
+
+            logMessage("⚠️ No flexible matches - falling back to BOOLEAN MODE", 'DEBUG', WEBHOOK_LOG_FILE);
 
             // No exact phrase matches - fall back to BOOLEAN MODE (searches name + description)
             $booleanQuery = '+' . implode(' +', $words);
