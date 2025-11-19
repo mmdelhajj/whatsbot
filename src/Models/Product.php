@@ -36,6 +36,24 @@ class Product {
         }
 
         // For longer queries, use FULLTEXT search (much faster!)
+        // For multi-word searches, require ALL words to be present using BOOLEAN MODE
+        $words = explode(' ', trim($query));
+        if (count($words) > 1) {
+            // Multi-word query: require ALL words (e.g., "coloring book" becomes "+coloring +book")
+            $booleanQuery = '+' . implode(' +', $words);
+            return $this->db->fetchAll(
+                "SELECT *, MATCH(item_name, description) AGAINST(? IN BOOLEAN MODE) as relevance
+                 FROM product_info
+                 WHERE (MATCH(item_name, description) AGAINST(? IN BOOLEAN MODE)
+                    OR item_code LIKE ?)
+                   AND stock_quantity > 0
+                 ORDER BY relevance DESC, item_name
+                 LIMIT ?",
+                [$booleanQuery, $booleanQuery, "%{$query}%", $limit]
+            );
+        }
+
+        // Single word query: use NATURAL LANGUAGE MODE
         return $this->db->fetchAll(
             "SELECT *, MATCH(item_name, description) AGAINST(? IN NATURAL LANGUAGE MODE) as relevance
              FROM product_info
