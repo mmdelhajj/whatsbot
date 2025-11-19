@@ -39,22 +39,32 @@ class Product {
         // For multi-word searches, require ALL words to be present using BOOLEAN MODE
         $words = explode(' ', trim($query));
         if (count($words) > 1) {
-            // Multi-word query: require ALL words (e.g., "coloring book" becomes "+coloring +book")
-            // PRIORITIZE exact phrase matches in item_name over scattered words
+            // Multi-word query: FIRST try exact phrase in item_name only (strict)
+            $phraseResults = $this->db->fetchAll(
+                "SELECT * FROM product_info
+                 WHERE item_name LIKE ?
+                   AND stock_quantity > 0
+                 ORDER BY item_name
+                 LIMIT ?",
+                ["%{$query}%", $limit]
+            );
+
+            // If we found exact phrase matches in names, return those only
+            if (!empty($phraseResults)) {
+                return $phraseResults;
+            }
+
+            // No exact phrase matches - fall back to BOOLEAN MODE (searches name + description)
             $booleanQuery = '+' . implode(' +', $words);
             return $this->db->fetchAll(
-                "SELECT *,
-                    CASE
-                        WHEN item_name LIKE ? THEN 100
-                        ELSE MATCH(item_name, description) AGAINST(? IN BOOLEAN MODE)
-                    END as relevance
+                "SELECT *, MATCH(item_name, description) AGAINST(? IN BOOLEAN MODE) as relevance
                  FROM product_info
                  WHERE (MATCH(item_name, description) AGAINST(? IN BOOLEAN MODE)
                     OR item_code LIKE ?)
                    AND stock_quantity > 0
                  ORDER BY relevance DESC, item_name
                  LIMIT ?",
-                ["%{$query}%", $booleanQuery, $booleanQuery, "%{$query}%", $limit]
+                [$booleanQuery, $booleanQuery, "%{$query}%", $limit]
             );
         }
 
