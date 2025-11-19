@@ -71,11 +71,19 @@ class Product {
             $flexibleConditions = [];
             $flexibleParams = [];
             foreach ($words as $word) {
-                // Match word OR word+'s' using LIKE (e.g., "book" matches "book" or "books")
+                // Match word OR word+'s' at word boundaries using LIKE
+                // Patterns: "word ", " word ", " word", "word" for start/middle/end/standalone
                 $escapedWord = str_replace(['%', '_'], ['\%', '\_'], $word);
-                $flexibleConditions[] = "(item_name LIKE ? OR item_name LIKE ?)";
-                $flexibleParams[] = "% {$escapedWord} %";    // " book "
-                $flexibleParams[] = "% {$escapedWord}s %";   // " books "
+                $flexibleConditions[] = "(item_name LIKE ? OR item_name LIKE ? OR item_name LIKE ? OR item_name LIKE ? OR item_name LIKE ? OR item_name LIKE ? OR item_name LIKE ? OR item_name LIKE ?)";
+                // Match "word" or "words" at various positions
+                $flexibleParams[] = "{$escapedWord} %";      // "Math " (start)
+                $flexibleParams[] = "{$escapedWord}s %";     // "Maths " (start)
+                $flexibleParams[] = "% {$escapedWord} %";    // " book " (middle)
+                $flexibleParams[] = "% {$escapedWord}s %";   // " books " (middle)
+                $flexibleParams[] = "% {$escapedWord}";      // " book" (end)
+                $flexibleParams[] = "% {$escapedWord}s";     // " books" (end)
+                $flexibleParams[] = $escapedWord;            // "math" (standalone - exact match)
+                $flexibleParams[] = "{$escapedWord}s";       // "maths" (standalone - exact match)
             }
             $flexibleWhere = implode(' AND ', $flexibleConditions);
 
