@@ -118,6 +118,29 @@ if (!$licenseStatus['valid']) {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.85; }
 }
+
+.license-refresh-btn {
+    background: rgba(255, 255, 255, 0.3);
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    color: inherit;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.license-refresh-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.5);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.license-refresh-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
 </style>
 
 <div class="license-banner <?php echo $bannerClass; ?>">
@@ -126,4 +149,33 @@ if (!$licenseStatus['valid']) {
         <div class="license-banner-message"><?php echo htmlspecialchars($message); ?></div>
         <div class="license-banner-details"><?php echo htmlspecialchars($details); ?></div>
     </div>
+    <button onclick="refreshLicense()" class="license-refresh-btn" title="Refresh license status from server">
+        🔄 Refresh
+    </button>
 </div>
+
+<script>
+function refreshLicense() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Refreshing...';
+
+    fetch('refresh-license.php')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                alert('✅ License refreshed successfully!\n\nReloading page...');
+                location.reload();
+            } else {
+                alert('❌ Error: ' + data.message);
+                btn.disabled = false;
+                btn.innerHTML = '🔄 Refresh';
+            }
+        })
+        .catch(err => {
+            alert('❌ Network error: ' + err.message);
+            btn.disabled = false;
+            btn.innerHTML = '🔄 Refresh';
+        });
+}
+</script>
