@@ -134,6 +134,25 @@ get_user_input() {
     read -p "Enter store longitude (for Google Maps, default: 35.654434764102675): " STORE_LONGITUDE
     STORE_LONGITUDE=${STORE_LONGITUDE:-35.654434764102675}
 
+    # Domain Configuration (for license system)
+    echo ""
+    print_info "=== Domain Configuration ==="
+
+    # Try to auto-detect domain/IP
+    DETECTED_IP=$(hostname -I | awk '{print $1}')
+    DETECTED_HOSTNAME=$(hostname -f 2>/dev/null || hostname)
+
+    echo ""
+    print_info "Auto-detected server information:"
+    echo "  - IP Address: $DETECTED_IP"
+    echo "  - Hostname: $DETECTED_HOSTNAME"
+    echo ""
+
+    read -p "Enter your domain name (e.g., bot.example.com) or press Enter to use IP [$DETECTED_IP]: " SITE_DOMAIN
+    SITE_DOMAIN=${SITE_DOMAIN:-$DETECTED_IP}
+
+    print_message "Using domain: $SITE_DOMAIN"
+
     # Admin User
     echo ""
     print_info "=== Admin Account Setup ==="
@@ -235,10 +254,16 @@ STORE_LONGITUDE=${STORE_LONGITUDE}
 
 # Automatic Sync Settings
 SYNC_INTERVAL=240
+
+# License Configuration - Auto Trial System
+LICENSE_SERVER_URL=https://lic.proxpanel.com
+LICENSE_KEY=
+SITE_DOMAIN=${SITE_DOMAIN}
+LICENSE_CHECK_ENABLED=true
 EOF
 
     chmod 600 "$INSTALL_DIR/.env"
-    print_message "Environment file created"
+    print_message "Environment file created with license configuration"
 }
 
 # Function to import database schema
@@ -447,6 +472,7 @@ print_summary() {
     echo ""
     echo "  📁 Installation Directory: $INSTALL_DIR"
     echo "  🌐 Server IP: $SERVER_IP"
+    echo "  🌍 Domain: $SITE_DOMAIN"
     echo ""
     print_info "Access URLs:"
     echo ""
@@ -476,6 +502,14 @@ print_summary() {
     echo "  🔄 Cron job installed (syncs every 4 hours by default)"
     echo "  📊 Change interval in Admin → Settings → Sync Interval"
     echo ""
+    print_info "License Information:"
+    echo ""
+    echo "  🔐 License Server: https://lic.proxpanel.com"
+    echo "  📝 Domain: $SITE_DOMAIN"
+    echo "  ⏰ Trial: 3 days (automatic on first access)"
+    echo "  📊 On first admin panel visit, your installation will auto-register"
+    echo "     and appear at lic.proxpanel.com for license management"
+    echo ""
     print_warning "IMPORTANT: Save these credentials in a secure location!"
     echo ""
     print_info "Next Steps:"
@@ -484,6 +518,7 @@ print_summary() {
     echo "  2. Configure ProxSMS webhook to point to: http://${SERVER_IP}/webhook-whatsapp.php"
     echo "  3. Import products from Brains ERP (if configured)"
     echo "  4. Test the bot by sending a WhatsApp message"
+    echo "  5. Your 3-day trial will start automatically - check lic.proxpanel.com to activate"
     echo ""
     echo "============================================="
     print_message "Installation Complete! 🎉"
