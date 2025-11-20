@@ -245,6 +245,8 @@ $recentOrders = $orderModel->getAllWithCustomers(10);
     </div>
 
     <div class="container">
+        <?php include 'license-banner.php'; ?>
+
         <!-- Statistics Cards -->
         <div class="stats-grid">
             <div class="stat-card">

@@ -41,6 +41,12 @@ define('WHATSAPP_ACCOUNT_ID', getenv('WHATSAPP_ACCOUNT_ID') ?: '');
 define('WHATSAPP_SEND_SECRET', getenv('WHATSAPP_SEND_SECRET') ?: '');
 define('WEBHOOK_SECRET', getenv('WEBHOOK_SECRET') ?: '');
 
+// License configuration
+define('LICENSE_SERVER_URL', getenv('LICENSE_SERVER_URL') ?: 'https://lic.proxpanel.com');
+define('LICENSE_KEY', getenv('LICENSE_KEY') ?: '');
+define('SITE_DOMAIN', getenv('SITE_DOMAIN') ?: $_SERVER['HTTP_HOST'] ?? 'unknown');
+define('LICENSE_CHECK_ENABLED', getenv('LICENSE_CHECK_ENABLED') !== 'false'); // Default enabled
+
 define('ANTHROPIC_API_KEY', getenv('ANTHROPIC_API_KEY') ?: '');
 define('ANTHROPIC_API_URL', 'https://api.anthropic.com/v1/messages');
 // Try multiple models in order of preference

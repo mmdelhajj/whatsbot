@@ -45,6 +45,24 @@ try {
         }
     }
 
+    // Validate license (if enabled)
+    if (LICENSE_CHECK_ENABLED) {
+        $licenseValidator = new LicenseValidator();
+        $licenseResult = $licenseValidator->validate();
+
+        if (!$licenseResult['valid']) {
+            logMessage("❌ LICENSE VALIDATION FAILED: {$licenseResult['message']}", 'ERROR', WEBHOOK_LOG_FILE);
+            http_response_code(403);
+            echo json_encode([
+                'error' => 'License validation failed',
+                'message' => $licenseResult['message']
+            ]);
+            exit;
+        }
+
+        logMessage("✅ License validated successfully", 'DEBUG', WEBHOOK_LOG_FILE);
+    }
+
     // Check payload type
     $payloadType = $input['type'] ?? null;
 
