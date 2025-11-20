@@ -87,14 +87,25 @@ class Product {
             }
             $flexibleWhere = implode(' AND ', $flexibleConditions);
 
-            $flexibleResults = $this->db->fetchAll(
-                "SELECT * FROM product_info
-                 WHERE {$flexibleWhere}
-                   AND stock_quantity > 0
-                 ORDER BY item_name
-                 LIMIT ?",
-                array_merge($flexibleParams, [$limit])
-            );
+            // Debug logging
+            logMessage("🔧 Flexible search WHERE clause: " . $flexibleWhere, 'DEBUG', WEBHOOK_LOG_FILE);
+            logMessage("🔧 Flexible search params (" . count($flexibleParams) . "): " . json_encode($flexibleParams), 'DEBUG', WEBHOOK_LOG_FILE);
+            logMessage("🔧 Total params with limit: " . count(array_merge($flexibleParams, [$limit])), 'DEBUG', WEBHOOK_LOG_FILE);
+
+            try {
+                $flexibleResults = $this->db->fetchAll(
+                    "SELECT * FROM product_info
+                     WHERE {$flexibleWhere}
+                       AND stock_quantity > 0
+                     ORDER BY item_name
+                     LIMIT ?",
+                    array_merge($flexibleParams, [$limit])
+                );
+                logMessage("🔧 Flexible search returned " . count($flexibleResults) . " results", 'DEBUG', WEBHOOK_LOG_FILE);
+            } catch (Exception $e) {
+                logMessage("❌ Flexible search error: " . $e->getMessage(), 'ERROR', WEBHOOK_LOG_FILE);
+                $flexibleResults = [];
+            }
 
             // If flexible match found results, return those
             if (!empty($flexibleResults)) {
