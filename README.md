@@ -45,12 +45,23 @@ The installer will:
 
 During installation, you'll be prompted for:
 
+- **Domain Name** - Your domain (e.g., bot.example.com) or server IP
 - **Store Name** - Your business name
 - **Anthropic API Key** - Get one at https://console.anthropic.com
 - **ProxSMS Credentials** - Account ID and Send Secret from ProxSMS
 - **Brains ERP API URL** - Your Brains ERP API endpoint (optional)
 - **Store Information** - Location, phone, hours, coordinates
 - **Admin Credentials** - Username and password for admin panel
+
+### License System
+
+This bot includes an **automatic 3-day trial** license system:
+
+- On first installation, you'll enter your domain name
+- When you first access the admin panel, the bot auto-registers for a 3-day trial
+- Your installation appears at **lic.proxpanel.com** for license management
+- Admin can activate full licenses (1-5 years) from the license dashboard
+- License server automatically checks all installations every 12 hours
 
 ## Quick Start
 
