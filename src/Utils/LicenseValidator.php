@@ -11,6 +11,7 @@ class LicenseValidator {
     private $licenseKeyFile;
     private $cacheExpiry = 3600; // Cache validation for 1 hour
     private $version = '1.0.0'; // Bot version
+    private $cachedServerIp = null; // Cache for server IP
 
     public function __construct() {
         $this->licenseServer = LICENSE_SERVER_URL ?? 'https://lic.proxpanel.com';
@@ -153,11 +154,13 @@ class LicenseValidator {
     private function validateRemote($licenseKey) {
         try {
             $fingerprint = $this->getServerFingerprint();
+            $serverIp = $_SERVER['SERVER_ADDR'] ?? $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 
             $url = $this->licenseServer . '/api/validate.php?' . http_build_query([
                 'key' => $licenseKey,
                 'domain' => $this->domain,
-                'fingerprint' => $fingerprint
+                'fingerprint' => $fingerprint,
+                'server_ip' => $serverIp
             ]);
 
             $ch = curl_init($url);
@@ -242,7 +245,7 @@ class LicenseValidator {
      */
     private function sendHeartbeat($licenseKey) {
         try {
-            $ip = $_SERVER['REMOTE_ADDR'] ?? $_SERVER['SERVER_ADDR'] ?? 'unknown';
+            $ip = $this->getServerPublicIP();
             $url = $this->licenseServer . '/api/heartbeat.php';
 
             $postData = http_build_query([
