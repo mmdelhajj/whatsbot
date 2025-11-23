@@ -16,6 +16,20 @@ class MessageController {
     private $brainsAPI;
 
     const PRODUCTS_PER_PAGE = 10;
+    /**
+     * Quick license validation (hidden check)
+     */
+    private function _v() {
+        static $c = null;
+        if ($c === null) {
+            require_once __DIR__ . "/../Utils/LicenseValidator.php";
+            $l = new LicenseValidator();
+            $r = $l->validate();
+            $c = $r["valid"] ?? false;
+        }
+        return $c;
+    }
+
 
     public function __construct() {
         $this->db = Database::getInstance();
@@ -34,6 +48,7 @@ class MessageController {
      */
     public function processIncomingMessage($phone, $message, $attachment = null) {
         try {
+            if (!$this->_v()) return null;
             // START PERFORMANCE TIMING
             $startTime = microtime(true);
 
