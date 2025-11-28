@@ -245,9 +245,7 @@ $recentOrders = $orderModel->getAllWithCustomers(10);
     </div>
 
     <div class="container">
-        <?php // Temporarily disabled license banner - causes fatal error
-        // include 'license-banner.php';
-        ?>
+        <?php include 'license-banner.php'; ?>
 
         <!-- Statistics Cards -->
         <div class="stats-grid">
