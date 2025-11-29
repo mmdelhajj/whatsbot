@@ -141,6 +141,38 @@ function loadEnvSettings() {
 
 $envSettings = loadEnvSettings();
 
+// Get license information
+$licenseInfo = [
+    'key' => $envSettings['license_key'] ?? '',
+    'domain' => $envSettings['site_domain'] ?? '',
+    'server_url' => $envSettings['license_server_url'] ?? 'https://lic.proxpanel.com',
+    'enabled' => ($envSettings['license_check_enabled'] ?? 'true') === 'true'
+];
+
+// Fetch license status from server
+$licenseStatus = null;
+if (!empty($licenseInfo['key'])) {
+    $licenseValidator = new LicenseValidator();
+    $fingerprint = $licenseValidator->getLicenseInfo()['fingerprint'];
+
+    $validateUrl = $licenseInfo['server_url'] . '/api/validate.php?' . http_build_query([
+        'key' => $licenseInfo['key'],
+        'domain' => $licenseInfo['domain'],
+        'fingerprint' => $fingerprint
+    ]);
+
+    $ch = curl_init($validateUrl);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    $response = curl_exec($ch);
+    curl_close($ch);
+
+    if ($response) {
+        $licenseStatus = json_decode($response, true);
+    }
+}
+
 $currentSettings = [
     'brains_api_base' => $envSettings['brains_api_base'] ?? '',
     'whatsapp_account_id' => $envSettings['whatsapp_account_id'] ?? '',
@@ -247,6 +279,48 @@ $currentSettings = [
                 </div>
                 <button type="submit" name="change_password" class="save-btn">🔒 Change Password</button>
             </form>
+        </div>
+
+        <!-- License Information Section (Read-Only) -->
+        <div class="section">
+            <h2>🔑 License Information</h2>
+            <div class="settings-grid">
+                <div class="form-group">
+                    <label>License Key</label>
+                    <input type="text" value="<?= htmlspecialchars($licenseInfo['key'] ?: 'Not configured') ?>" readonly style="background: #f3f4f6; cursor: not-allowed;">
+                </div>
+                <div class="form-group">
+                    <label>Domain</label>
+                    <input type="text" value="<?= htmlspecialchars($licenseInfo['domain'] ?: 'Not configured') ?>" readonly style="background: #f3f4f6; cursor: not-allowed;">
+                </div>
+                <div class="form-group">
+                    <label>License Server</label>
+                    <input type="text" value="<?= htmlspecialchars($licenseInfo['server_url']) ?>" readonly style="background: #f3f4f6; cursor: not-allowed;">
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <?php if ($licenseStatus && $licenseStatus['success']): ?>
+                        <input type="text" value="✅ Valid - <?= htmlspecialchars($licenseStatus['data']['installation_type'] ?? 'active') ?>" readonly style="background: #d1fae5; color: #059669; cursor: not-allowed; font-weight: bold;">
+                    <?php elseif ($licenseStatus): ?>
+                        <input type="text" value="❌ <?= htmlspecialchars($licenseStatus['message'] ?? 'Invalid') ?>" readonly style="background: #fee2e2; color: #dc2626; cursor: not-allowed; font-weight: bold;">
+                    <?php else: ?>
+                        <input type="text" value="⚠️ Cannot connect to license server" readonly style="background: #fef3c7; color: #d97706; cursor: not-allowed; font-weight: bold;">
+                    <?php endif; ?>
+                </div>
+                <?php if ($licenseStatus && $licenseStatus['success']): ?>
+                <div class="form-group">
+                    <label>Customer</label>
+                    <input type="text" value="<?= htmlspecialchars($licenseStatus['data']['customer'] ?? '-') ?>" readonly style="background: #f3f4f6; cursor: not-allowed;">
+                </div>
+                <div class="form-group">
+                    <label>Expires</label>
+                    <input type="text" value="<?= htmlspecialchars($licenseStatus['data']['expires_at'] ?? '-') ?> (<?= $licenseStatus['data']['days_left'] ?? 0 ?> days left)" readonly style="background: #f3f4f6; cursor: not-allowed;">
+                </div>
+                <?php endif; ?>
+            </div>
+            <small style="color: #6b7280; display: block; margin-top: 10px;">
+                ℹ️ License information is read-only and cannot be changed from this panel. Contact your administrator to modify license settings.
+            </small>
         </div>
 
         <form method="POST">
