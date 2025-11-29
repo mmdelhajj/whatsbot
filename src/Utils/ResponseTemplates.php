@@ -32,6 +32,7 @@ class ResponseTemplates {
             'ar' => "{$greeting} 👋\n\n" .
                     "أهلاً بك في *" . STORE_NAME . "* 📚\n\n" .
                     "كيف يمكنني مساعدتك اليوم؟\n\n" .
+                    "• 🏫 اكتب *كتب مدرسية* لطلب لوائح المدارس\n" .
                     "• 📖 اكتب *منتجات* لرؤية الكتب المتاحة\n" .
                     "• 📦 اكتب *طلباتي* لرؤية طلباتك\n" .
                     "• 💰 اكتب *حساب* للاستعلام عن رصيدك\n" .
@@ -40,6 +41,7 @@ class ResponseTemplates {
             'en' => "{$greeting} 👋\n\n" .
                     "Welcome to *" . STORE_NAME . "* 📚\n\n" .
                     "How can I help you today?\n\n" .
+                    "• 🏫 Type *school books* to order school lists\n" .
                     "• 📖 Type *products* to see available books\n" .
                     "• 📦 Type *my orders* to view your orders\n" .
                     "• 💰 Type *account* to check your balance\n" .
@@ -48,6 +50,7 @@ class ResponseTemplates {
             'fr' => "{$greeting} 👋\n\n" .
                     "Bienvenue à *" . STORE_NAME . "* 📚\n\n" .
                     "Comment puis-je vous aider aujourd'hui?\n\n" .
+                    "• 🏫 Tapez *livres scolaires* pour commander les listes scolaires\n" .
                     "• 📖 Tapez *produits* pour voir les livres disponibles\n" .
                     "• 📦 Tapez *mes commandes* pour voir vos commandes\n" .
                     "• 💰 Tapez *compte* pour vérifier votre solde\n" .
@@ -105,7 +108,7 @@ class ResponseTemplates {
     /**
      * Get product list message with pagination
      */
-    public static function productList($lang, $products, $currentPage, $totalPages) {
+    public static function productList($lang, $products, $currentPage, $totalPages, $searchSuggestion = null) {
         $header = [
             'ar' => "📚 *قائمة المنتجات* (صفحة {$currentPage} من {$totalPages})\n\n",
             'en' => "📚 *Product List* (Page {$currentPage} of {$totalPages})\n\n",
@@ -139,6 +142,18 @@ class ResponseTemplates {
         }
 
         $message .= "\n" . $footer;
+
+        // Add search suggestion tip if available
+        if ($searchSuggestion !== null) {
+            $keyword = $searchSuggestion['keyword'];
+            $count = $searchSuggestion['count'];
+            $tip = [
+                'ar' => "\n\n💡 *نصيحة:* للمزيد من المنتجات، جرب البحث عن '{$keyword}' ({$count} منتج)",
+                'en' => "\n\n💡 *Tip:* For more products, try searching '{$keyword}' ({$count} products)",
+                'fr' => "\n\n💡 *Astuce:* Pour plus de produits, essayez de rechercher '{$keyword}' ({$count} produits)"
+            ][$lang];
+            $message .= $tip;
+        }
 
         return $message;
     }

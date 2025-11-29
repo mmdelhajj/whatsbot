@@ -66,13 +66,20 @@ try {
     $skipped = 0;
 
     foreach ($items as $item) {
-        // Brains API uses: SKU, Name, StockQuantity, Price
+        // Brains API uses: SKU, Name, StockQuantity, Price, Group, GroupCode, SubGroup, SubGroupCode, IsSchool
         $itemCode = $item['SKU'] ?? ($item['ItemCode'] ?? null);
         $itemName = $item['Name'] ?? ($item['ItemName'] ?? null);
         $price = floatval($item['Price'] ?? 0);
         $stockQty = intval($item['StockQuantity'] ?? ($item['StockQty'] ?? 0));
-        $category = $item['Category'] ?? '';
+        $category = $item['ItemCategory'] ?? ($item['Category'] ?? '');
         $imageUrl = $item['ImageURL'] ?? '';
+
+        // School book data
+        $groupCode = $item['GroupCode'] ?? null;
+        $groupName = $item['Group'] ?? null;
+        $subgroupCode = $item['SubGroupCode'] ?? null;
+        $subgroupName = $item['SubGroup'] ?? null;
+        $isSchool = intval($item['IsSchool'] ?? 0);
 
         if (!$itemCode || !$itemName) {
             $skipped++;
@@ -90,7 +97,12 @@ try {
                 'item_name' => $itemName,
                 'price' => $price,
                 'stock_quantity' => $stockQty,
-                'category' => $category
+                'category' => $category,
+                'group_code' => $groupCode,
+                'group_name' => $groupName,
+                'subgroup_code' => $subgroupCode,
+                'subgroup_name' => $subgroupName,
+                'is_school' => $isSchool
             ];
 
             // Only update image_url if API provides a non-empty value
@@ -107,7 +119,12 @@ try {
                 'price' => $price,
                 'stock_quantity' => $stockQty,
                 'category' => $category,
-                'image_url' => $imageUrl
+                'image_url' => $imageUrl,
+                'group_code' => $groupCode,
+                'group_name' => $groupName,
+                'subgroup_code' => $subgroupCode,
+                'subgroup_name' => $subgroupName,
+                'is_school' => $isSchool
             ]);
             $created++;
         }

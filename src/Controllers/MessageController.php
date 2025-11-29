@@ -14,22 +14,10 @@ class MessageController {
     private $claudeAI;
     private $proxSMS;
     private $brainsAPI;
+    private $schoolBookController;
+    private $schoolBookService;
 
     const PRODUCTS_PER_PAGE = 10;
-    /**
-     * Quick license validation (hidden check)
-     */
-    private function _v() {
-        static $c = null;
-        if ($c === null) {
-            require_once __DIR__ . "/../Utils/LicenseValidator.php";
-            $l = new LicenseValidator();
-            $r = $l->validate();
-            $c = $r["valid"] ?? false;
-        }
-        return $c;
-    }
-
 
     public function __construct() {
         $this->db = Database::getInstance();
@@ -41,6 +29,8 @@ class MessageController {
         $this->claudeAI = new ClaudeAI();
         $this->proxSMS = new ProxSMSService();
         $this->brainsAPI = new BrainsAPI();
+        $this->schoolBookController = new SchoolBookController();
+        $this->schoolBookService = new SchoolBookService();
     }
 
     /**
@@ -48,7 +38,6 @@ class MessageController {
      */
     public function processIncomingMessage($phone, $message, $attachment = null) {
         try {
-            if (!$this->_v()) return null;
             // START PERFORMANCE TIMING
             $startTime = microtime(true);
 
@@ -222,6 +211,13 @@ class MessageController {
         // NOTE: Hours, location, and delivery queries are now handled by checkStoreInfoQuestions()
         // This ensures they use dynamic values from .env configuration and better multilingual patterns
 
+        // HIGHEST PRIORITY: Check for school books flow BEFORE everything else
+        // This ensures school book keywords don't get intercepted by generic book responses in checkStoreInfoQuestions
+        $schoolBookResponse = $this->handleSchoolBooksCheck($customer['id'], $message, $lang, $state);
+        if ($schoolBookResponse !== null) {
+            return $schoolBookResponse;
+        }
+
         // PRIORITY: Check store info questions BEFORE state routing (so they work in any state)
         $storeInfoResponse = $this->checkStoreInfoQuestions($message, $lang);
         if ($storeInfoResponse !== null) {
@@ -343,8 +339,10 @@ class MessageController {
             return $responses[$lang] ?? $responses['en'];
         }
 
-        // Contact/phone questions
-        if (preg_match('/\b(phone|contact|call|رقم|هاتف|اتصال|téléphone|appeler|numéro)\b/ui', $messageLower)) {
+        // Contact/phone questions (but exclude department-specific requests)
+        // Don't match if message contains department keywords (those are handled by custom Q&A)
+        if (preg_match('/\b(phone|contact|call|رقم|هاتف|اتصال|téléphone|appeler|numéro)\b/ui', $messageLower)
+            && !preg_match('/(numbers|number|center|centre|printing|print|stationary|photo|copy|department|departments|ارقام|مركز|نسخ|طباعة|مكتبة|تصوير|قسم)/ui', $messageLower)) {
             $responses = [
                 'ar' => "📞 رقم الهاتف: " . STORE_PHONE . "\n📍 الموقع: " . STORE_LOCATION . "\n🌐 الموقع الإلكتروني: " . STORE_WEBSITE . "\n\nتواصل معنا بأي وقت! 😊",
                 'en' => "📞 Phone: " . STORE_PHONE . "\n📍 Location: " . STORE_LOCATION . "\n🌐 Website: " . STORE_WEBSITE . "\n\nContact us anytime! 😊",
@@ -820,7 +818,29 @@ class MessageController {
         logMessage("⏱️ Database product search took {$searchDuration}ms for term: '{$searchTerm}'", 'DEBUG', WEBHOOK_LOG_FILE);
 
         if (empty($products)) {
-            // No products found - return null to let AI handle it
+            // No products found - try to suggest similar keywords
+            // Check if we can find results with individual words
+            $words = explode(' ', trim($searchTerm));
+            if (count($words) >= 2) {
+                // Multi-word search failed - try each word individually
+                foreach ($words as $word) {
+                    if (strlen($word) >= 3) { // Only try meaningful words
+                        $wordResults = $this->productModel->search($word, 10);
+                        if (!empty($wordResults)) {
+                            // Found results with this word! Suggest it
+                            $count = count($this->productModel->search($word, 100));
+                            $didYouMean = [
+                                'ar' => "🔍 لم أجد نتائج لـ '*{$searchTerm}*'\n\nهل تقصد '*{$word}*'? ({$count} منتج)",
+                                'en' => "🔍 No results for '*{$searchTerm}*'\n\nDid you mean '*{$word}*'? ({$count} products)",
+                                'fr' => "🔍 Aucun résultat pour '*{$searchTerm}*'\n\nVoulez-vous dire '*{$word}*'? ({$count} produits)"
+                            ][$lang];
+                            return $didYouMean;
+                        }
+                    }
+                }
+            }
+            
+            // No suggestions found - return null to let AI handle it
             return null;
         }
 
@@ -851,6 +871,22 @@ class MessageController {
         $page = 1;
         $productsPage = array_slice($products, 0, self::PRODUCTS_PER_PAGE);
 
+        // Check if we should suggest a broader search
+        $searchSuggestion = null;
+        $words = explode(' ', trim($searchTerm));
+        if (count($words) >= 2 && $totalProducts < 20) {
+            // Multi-word search with few results - check if first word alone gives more results
+            $firstWord = $words[0];
+            $broaderResults = $this->productModel->search($firstWord, 100);
+            if (count($broaderResults) > $totalProducts) {
+                // More results with first word - suggest it
+                $searchSuggestion = [
+                    'keyword' => $firstWord,
+                    'count' => count($broaderResults)
+                ];
+            }
+        }
+
         // Save state
         $this->conversationState->set($customerId, ConversationState::STATE_AWAITING_PRODUCT_SELECTION, [
             'current_page' => $page,
@@ -860,7 +896,7 @@ class MessageController {
             'all_search_results' => $products
         ]);
 
-        return ResponseTemplates::productList($lang, $productsPage, $page, $totalPages);
+        return ResponseTemplates::productList($lang, $productsPage, $page, $totalPages, $searchSuggestion);
     }
 
     /**
@@ -1356,10 +1392,32 @@ class MessageController {
     }
 
     /**
-     * Show customer's orders
+     * Show customer's orders (including book orders)
      */
     private function showCustomerOrders($customerId, $lang) {
-        $orders = $this->orderModel->getByCustomer($customerId, 10);
+        // Get regular orders
+        $regularOrders = $this->orderModel->getByCustomer($customerId, 10);
+
+        // Get book orders
+        $bookOrders = $this->schoolBookService->getCustomerBookOrders($customerId, 10);
+
+        // Mark order types and combine
+        foreach ($regularOrders as &$order) {
+            $order['order_type'] = 'regular';
+        }
+        foreach ($bookOrders as &$order) {
+            $order['order_number'] = 'BOOK-' . $order['id'];
+            $order['order_type'] = 'book';
+        }
+
+        // Combine and sort by date
+        $orders = array_merge($regularOrders, $bookOrders);
+        usort($orders, function($a, $b) {
+            return strtotime($b['created_at']) - strtotime($a['created_at']);
+        });
+
+        // Limit to 10 most recent
+        $orders = array_slice($orders, 0, 10);
 
         if (empty($orders)) {
             $messages = [
@@ -1398,12 +1456,18 @@ class MessageController {
             ];
             $statusEmoji = $statusMap[$status] ?? '📋';
 
-            $message .= "*{$num}.* #{$orderNum}\n";
+            // Add school books indicator
+            if (($order['order_type'] ?? 'regular') === 'book') {
+                $message .= "*{$num}.* 📚 #{$orderNum}\n";
+                $message .= "   🏫 {$order['school_name']} - {$order['grade_level']}\n";
+            } else {
+                $message .= "*{$num}.* #{$orderNum}\n";
+            }
 
             // Show items in the order
             if (!empty($order['items'])) {
                 foreach ($order['items'] as $item) {
-                    $itemName = $item['product_name'];
+                    $itemName = $item['product_name'] ?? $item['book_title'] ?? 'Item';
                     $qty = $item['quantity'];
                     $message .= "   📦 {$itemName}";
                     if ($qty > 1) {
@@ -1479,9 +1543,19 @@ class MessageController {
                 return $messages[$lang] ?? $messages['en'];
             }
 
-            // Cancel the order
+            // Cancel the order (handle both regular and book orders)
             try {
-                $this->orderModel->updateStatus($selectedOrder['id'], 'cancelled');
+                if (($selectedOrder['order_type'] ?? 'regular') === 'book') {
+                    // Cancel book order
+                    $this->db->update('book_orders',
+                        ['status' => 'cancelled'],
+                        'id = :id',
+                        ['id' => $selectedOrder['id']]
+                    );
+                } else {
+                    // Cancel regular order
+                    $this->orderModel->updateStatus($selectedOrder['id'], 'cancelled');
+                }
 
                 $messages = [
                     'ar' => "✅ تم إلغاء الطلب #{$selectedOrder['order_number']} بنجاح!\n\n💰 المبلغ: " . number_format($selectedOrder['total_amount'], 0) . " " . CURRENCY,
@@ -1667,5 +1741,35 @@ class MessageController {
             ];
             return $messages[$lang] ?? $messages['en'];
         }
+    }
+
+    /**
+     * Handle school books check - HIGHEST PRIORITY
+     * Checks if message triggers school books flow or if user is in school books state
+     */
+    private function handleSchoolBooksCheck($customerId, $message, $lang, $state) {
+        // School book states that should be handled by SchoolBookController
+        $schoolBookStates = [
+            ConversationState::STATE_SCHOOL_BOOKS_START,
+            ConversationState::STATE_SELECTING_SCHOOL,
+            ConversationState::STATE_SELECTING_GRADE,
+            ConversationState::STATE_VIEWING_BOOKS,
+            ConversationState::STATE_SELECTING_BOOKS,
+            ConversationState::STATE_CONFIRMING_SCHOOL_ORDER
+        ];
+
+        // If user is already in a school book flow state, handle it
+        if (in_array($state, $schoolBookStates)) {
+            return $this->schoolBookController->handleSchoolBooksFlow($customerId, $message, $lang);
+        }
+
+        // Check if message triggers school books flow (new entry)
+        if ($this->schoolBookService->isSchoolBookTrigger($message)) {
+            logMessage("School books trigger detected: {$message}", 'DEBUG');
+            return $this->schoolBookController->handleSchoolBooksFlow($customerId, $message, $lang);
+        }
+
+        // Not a school books request
+        return null;
     }
 }

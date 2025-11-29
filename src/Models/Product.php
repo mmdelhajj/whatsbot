@@ -194,28 +194,38 @@ class Product {
 
     /**
      * Bulk upsert products (for sync)
+     * API fields: SKU, Name, Price, StockQuantity, Group, GroupCode, SubGroup, SubGroupCode, IsSchool, ShortDescription
      */
     public function bulkUpsert($products) {
         $added = 0;
         $updated = 0;
 
         foreach ($products as $product) {
-            $existing = $this->findByCode($product['ItemCode']);
+            // Support both old format (ItemCode/ItemName) and new API format (SKU/Name)
+            $itemCode = $product['SKU'] ?? $product['ItemCode'] ?? null;
+            if (!$itemCode) continue;
+
+            $existing = $this->findByCode($itemCode);
 
             $productData = [
-                'item_code' => $product['ItemCode'],
-                'item_name' => $product['ItemName'] ?? '',
+                'item_code' => $itemCode,
+                'item_name' => $product['Name'] ?? $product['ItemName'] ?? '',
                 'price' => $product['Price'] ?? 0,
-                'stock_quantity' => $product['StockQty'] ?? 0,
-                'category' => $product['Category'] ?? null,
-                'description' => $product['Description'] ?? null
+                'stock_quantity' => $product['StockQuantity'] ?? $product['StockQty'] ?? 0,
+                'category' => $product['ItemCategory'] ?? $product['Category'] ?? null,
+                'description' => $product['ShortDescription'] ?? $product['Description'] ?? null,
+                'group_code' => $product['GroupCode'] ?? null,
+                'group_name' => $product['Group'] ?? null,
+                'subgroup_code' => $product['SubGroupCode'] ?? null,
+                'subgroup_name' => $product['SubGroup'] ?? null,
+                'is_school' => $product['IsSchool'] ?? 0
             ];
 
             if ($existing) {
                 $this->db->update('product_info',
                     array_diff_key($productData, ['item_code' => '']),
                     'item_code = :code',
-                    ['code' => $product['ItemCode']]
+                    ['code' => $itemCode]
                 );
                 $updated++;
             } else {

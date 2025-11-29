@@ -214,13 +214,65 @@ CREATE TABLE `product_info` (
   `description` text COLLATE utf8mb4_unicode_ci,
   `image_url` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `last_updated` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `group_code` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `group_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `subgroup_code` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `subgroup_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `is_school` tinyint(1) DEFAULT '0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `item_code` (`item_code`),
   KEY `idx_item_code` (`item_code`),
   KEY `idx_item_name` (`item_name`),
   KEY `idx_category` (`category`),
+  KEY `idx_subgroup_name` (`subgroup_name`),
+  KEY `idx_is_school` (`is_school`),
   FULLTEXT KEY `idx_fulltext_search` (`item_name`,`description`)
 ) ENGINE=InnoDB AUTO_INCREMENT=17689 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `book_orders`
+--
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `book_orders` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `customer_id` int NOT NULL,
+  `school_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `grade_level` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `total_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `status` enum('pending','confirmed','preparing','on_the_way','delivered','cancelled') COLLATE utf8mb4_unicode_ci DEFAULT 'pending',
+  `notes` text COLLATE utf8mb4_unicode_ci,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_customer_id` (`customer_id`),
+  KEY `idx_status` (`status`),
+  CONSTRAINT `book_orders_ibfk_1` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `book_order_items`
+--
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `book_order_items` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `book_order_id` int NOT NULL,
+  `school_book_id` int NOT NULL,
+  `quantity` int NOT NULL DEFAULT '1',
+  `unit_price` decimal(15,2) NOT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_book_order_id` (`book_order_id`),
+  KEY `idx_school_book_id` (`school_book_id`),
+  CONSTRAINT `book_order_items_ibfk_1` FOREIGN KEY (`book_order_id`) REFERENCES `book_orders` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `book_order_items_ibfk_2` FOREIGN KEY (`school_book_id`) REFERENCES `product_info` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
