@@ -14,8 +14,6 @@ class MessageController {
     private $claudeAI;
     private $proxSMS;
     private $brainsAPI;
-    private $schoolBookController;
-    private $schoolBookService;
 
     const PRODUCTS_PER_PAGE = 10;
 
@@ -29,28 +27,6 @@ class MessageController {
         $this->claudeAI = new ClaudeAI();
         $this->proxSMS = new ProxSMSService();
         $this->brainsAPI = new BrainsAPI();
-        $this->schoolBookController = new SchoolBookController();
-        $this->schoolBookService = new SchoolBookService();
-    }
-
-    /**
-     * Check license validity
-     */
-    private function checkLicense() {
-        // Skip if license check is disabled (for your own servers)
-        if (!LICENSE_CHECK_ENABLED) {
-            return true;
-        }
-
-        $validator = new LicenseValidator();
-        $result = $validator->validate();
-
-        if (!$result['valid']) {
-            logMessage("❌ LICENSE BLOCKED: " . ($result['message'] ?? 'Invalid license'), 'ERROR', WEBHOOK_LOG_FILE);
-            return false;
-        }
-
-        return true;
     }
 
     /**
@@ -58,12 +34,6 @@ class MessageController {
      */
     public function processIncomingMessage($phone, $message, $attachment = null) {
         try {
-            // CHECK LICENSE FIRST - Stop if suspended/invalid/expired
-            if (!$this->checkLicense()) {
-                logMessage("Bot stopped - License not valid", 'ERROR', WEBHOOK_LOG_FILE);
-                return null; // Don't respond if license is invalid
-            }
-
             // START PERFORMANCE TIMING
             $startTime = microtime(true);
 
@@ -237,13 +207,6 @@ class MessageController {
         // NOTE: Hours, location, and delivery queries are now handled by checkStoreInfoQuestions()
         // This ensures they use dynamic values from .env configuration and better multilingual patterns
 
-        // HIGHEST PRIORITY: Check for school books flow BEFORE everything else
-        // This ensures school book keywords don't get intercepted by generic book responses in checkStoreInfoQuestions
-        $schoolBookResponse = $this->handleSchoolBooksCheck($customer['id'], $message, $lang, $state);
-        if ($schoolBookResponse !== null) {
-            return $schoolBookResponse;
-        }
-
         // PRIORITY: Check store info questions BEFORE state routing (so they work in any state)
         $storeInfoResponse = $this->checkStoreInfoQuestions($message, $lang);
         if ($storeInfoResponse !== null) {
@@ -365,10 +328,8 @@ class MessageController {
             return $responses[$lang] ?? $responses['en'];
         }
 
-        // Contact/phone questions (but exclude department-specific requests)
-        // Don't match if message contains department keywords (those are handled by custom Q&A)
-        if (preg_match('/\b(phone|contact|call|رقم|هاتف|اتصال|téléphone|appeler|numéro)\b/ui', $messageLower)
-            && !preg_match('/(numbers|number|center|centre|printing|print|stationary|photo|copy|department|departments|ارقام|مركز|نسخ|طباعة|مكتبة|تصوير|قسم)/ui', $messageLower)) {
+        // Contact/phone questions
+        if (preg_match('/\b(phone|contact|call|رقم|هاتف|اتصال|téléphone|appeler|numéro)\b/ui', $messageLower)) {
             $responses = [
                 'ar' => "📞 رقم الهاتف: " . STORE_PHONE . "\n📍 الموقع: " . STORE_LOCATION . "\n🌐 الموقع الإلكتروني: " . STORE_WEBSITE . "\n\nتواصل معنا بأي وقت! 😊",
                 'en' => "📞 Phone: " . STORE_PHONE . "\n📍 Location: " . STORE_LOCATION . "\n🌐 Website: " . STORE_WEBSITE . "\n\nContact us anytime! 😊",
@@ -1013,29 +974,26 @@ class MessageController {
             // Get customer for phone number
             $customer = $this->customerModel->findById($customerId);
 
-            // Save selected product state
-            logMessage("Setting state to CONFIRMING_PRODUCT", 'DEBUG');
-            $this->conversationState->set($customerId, ConversationState::STATE_CONFIRMING_PRODUCT, [
-                'selected_product' => $selectedProduct
-            ]);
-
-            // Send product image if available (includes confirmation prompt in caption)
+            // Send product image if available
             if (!empty($selectedProduct['image_url'])) {
                 try {
                     logMessage("Sending product image: {$selectedProduct['image_url']}", 'DEBUG');
                     $this->sendProductImage($customer['phone'], $selectedProduct, $lang, $customerId);
                     logMessage("Product image sent successfully (outer)", 'DEBUG');
-                    // Image caption already includes confirmation prompt, no need for separate message
-                    return null;
                 } catch (Exception $e) {
                     logMessage("Error sending product image: " . $e->getMessage(), 'ERROR');
-                    // If image fails, fall through to text confirmation
+                    // Continue anyway - don't fail the whole flow if image fails
                 }
             }
 
             logMessage("After image sending block", 'DEBUG');
 
-            // Only send text confirmation if no image was sent
+            // Save selected product and ask for confirmation
+            logMessage("Setting state to CONFIRMING_PRODUCT", 'DEBUG');
+            $this->conversationState->set($customerId, ConversationState::STATE_CONFIRMING_PRODUCT, [
+                'selected_product' => $selectedProduct
+            ]);
+
             $confirmMessage = ResponseTemplates::askProductConfirmation($lang, $selectedProduct['item_name']);
             logMessage("Confirmation message: $confirmMessage", 'DEBUG');
             return $confirmMessage;
@@ -1054,7 +1012,6 @@ class MessageController {
 
     /**
      * Handle product confirmation (when customer types "1" to confirm)
-     * Directly creates order with quantity = 1 (no quantity prompt)
      */
     private function handleProductConfirmation($customerId, $message, $lang) {
         $messageTrimmed = trim($message);
@@ -1069,36 +1026,12 @@ class MessageController {
                 return ResponseTemplates::invalidInput($lang);
             }
 
-            // Default quantity = 1 (skip quantity prompt)
-            $quantity = 1;
+            // Move to quantity input state
+            $this->conversationState->set($customerId, ConversationState::STATE_AWAITING_QUANTITY, [
+                'selected_product' => $selectedProduct
+            ]);
 
-            // Check if customer has complete information (email is optional)
-            $customer = $this->customerModel->findById($customerId);
-
-            if (!empty($customer['name']) && !empty($customer['address'])) {
-                // Customer has required info (name + address), create order directly
-                $this->conversationState->updateData($customerId, ['quantity' => $quantity]);
-                return $this->createOrderDirectly($customerId, $selectedProduct, $customer, $lang);
-            } else {
-                // Need to collect customer information
-                if (empty($customer['name'])) {
-                    // Start with name
-                    $this->conversationState->set($customerId, ConversationState::STATE_AWAITING_NAME, [
-                        'selected_product' => $selectedProduct,
-                        'quantity' => $quantity
-                    ]);
-                    return ResponseTemplates::askName($lang, $selectedProduct['item_name']);
-                } else if (empty($customer['address'])) {
-                    // Already have name, just need address
-                    $this->conversationState->set($customerId, ConversationState::STATE_AWAITING_ADDRESS, [
-                        'selected_product' => $selectedProduct,
-                        'quantity' => $quantity,
-                        'customer_name' => $customer['name'],
-                        'customer_email' => $customer['email'] ?? ''
-                    ]);
-                    return ResponseTemplates::askAddress($lang);
-                }
-            }
+            return ResponseTemplates::askQuantity($lang, $selectedProduct['item_name']);
         }
 
         // If not "1", treat as new search
@@ -1446,32 +1379,10 @@ class MessageController {
     }
 
     /**
-     * Show customer's orders (including book orders)
+     * Show customer's orders
      */
     private function showCustomerOrders($customerId, $lang) {
-        // Get regular orders
-        $regularOrders = $this->orderModel->getByCustomer($customerId, 10);
-
-        // Get book orders
-        $bookOrders = $this->schoolBookService->getCustomerBookOrders($customerId, 10);
-
-        // Mark order types and combine
-        foreach ($regularOrders as &$order) {
-            $order['order_type'] = 'regular';
-        }
-        foreach ($bookOrders as &$order) {
-            $order['order_number'] = 'BOOK-' . $order['id'];
-            $order['order_type'] = 'book';
-        }
-
-        // Combine and sort by date
-        $orders = array_merge($regularOrders, $bookOrders);
-        usort($orders, function($a, $b) {
-            return strtotime($b['created_at']) - strtotime($a['created_at']);
-        });
-
-        // Limit to 10 most recent
-        $orders = array_slice($orders, 0, 10);
+        $orders = $this->orderModel->getByCustomer($customerId, 10);
 
         if (empty($orders)) {
             $messages = [
@@ -1510,18 +1421,12 @@ class MessageController {
             ];
             $statusEmoji = $statusMap[$status] ?? '📋';
 
-            // Add school books indicator
-            if (($order['order_type'] ?? 'regular') === 'book') {
-                $message .= "*{$num}.* 📚 #{$orderNum}\n";
-                $message .= "   🏫 {$order['school_name']} - {$order['grade_level']}\n";
-            } else {
-                $message .= "*{$num}.* #{$orderNum}\n";
-            }
+            $message .= "*{$num}.* #{$orderNum}\n";
 
             // Show items in the order
             if (!empty($order['items'])) {
                 foreach ($order['items'] as $item) {
-                    $itemName = $item['product_name'] ?? $item['book_title'] ?? 'Item';
+                    $itemName = $item['product_name'];
                     $qty = $item['quantity'];
                     $message .= "   📦 {$itemName}";
                     if ($qty > 1) {
@@ -1597,19 +1502,9 @@ class MessageController {
                 return $messages[$lang] ?? $messages['en'];
             }
 
-            // Cancel the order (handle both regular and book orders)
+            // Cancel the order
             try {
-                if (($selectedOrder['order_type'] ?? 'regular') === 'book') {
-                    // Cancel book order
-                    $this->db->update('book_orders',
-                        ['status' => 'cancelled'],
-                        'id = :id',
-                        ['id' => $selectedOrder['id']]
-                    );
-                } else {
-                    // Cancel regular order
-                    $this->orderModel->updateStatus($selectedOrder['id'], 'cancelled');
-                }
+                $this->orderModel->updateStatus($selectedOrder['id'], 'cancelled');
 
                 $messages = [
                     'ar' => "✅ تم إلغاء الطلب #{$selectedOrder['order_number']} بنجاح!\n\n💰 المبلغ: " . number_format($selectedOrder['total_amount'], 0) . " " . CURRENCY,
@@ -1675,7 +1570,7 @@ class MessageController {
     }
 
     /**
-     * Send product image with details and confirmation prompt to customer
+     * Send product image with details to customer
      */
     private function sendProductImage($phone, $product, $lang, $customerId) {
         try {
@@ -1686,26 +1581,20 @@ class MessageController {
             $imageUrl = 'http://' . $host . $product['image_url'];
             logMessage("sendProductImage: Image URL: $imageUrl", 'DEBUG');
 
-            // Create caption with product details AND confirmation prompt (all in one message)
+            // Create caption with product details
             $price = number_format($product['price'], 0);
             $stock = $product['stock_quantity'] > 0 ? '✅' : '❌';
 
             $captions = [
                 'ar' => "*{$product['item_name']}*\n\n" .
                         "💰 السعر: {$price} " . CURRENCY . "\n" .
-                        "📦 المخزون: {$stock}\n\n" .
-                        "👉 اكتب *1* للتأكيد والطلب\n" .
-                        "📝 أو ابحث عن منتج آخر",
+                        "📦 المخزون: {$stock}",
                 'en' => "*{$product['item_name']}*\n\n" .
                         "💰 Price: {$price} " . CURRENCY . "\n" .
-                        "📦 Stock: {$stock}\n\n" .
-                        "👉 Type *1* to confirm and order\n" .
-                        "📝 Or search for another product",
+                        "📦 Stock: {$stock}",
                 'fr' => "*{$product['item_name']}*\n\n" .
                         "💰 Prix: {$price} " . CURRENCY . "\n" .
-                        "📦 Stock: {$stock}\n\n" .
-                        "👉 Tapez *1* pour confirmer et commander\n" .
-                        "📝 Ou recherchez un autre produit"
+                        "📦 Stock: {$stock}"
             ];
 
             $caption = $captions[$lang] ?? $captions['en'];
@@ -1801,35 +1690,5 @@ class MessageController {
             ];
             return $messages[$lang] ?? $messages['en'];
         }
-    }
-
-    /**
-     * Handle school books check - HIGHEST PRIORITY
-     * Checks if message triggers school books flow or if user is in school books state
-     */
-    private function handleSchoolBooksCheck($customerId, $message, $lang, $state) {
-        // School book states that should be handled by SchoolBookController
-        $schoolBookStates = [
-            ConversationState::STATE_SCHOOL_BOOKS_START,
-            ConversationState::STATE_SELECTING_SCHOOL,
-            ConversationState::STATE_SELECTING_GRADE,
-            ConversationState::STATE_VIEWING_BOOKS,
-            ConversationState::STATE_SELECTING_BOOKS,
-            ConversationState::STATE_CONFIRMING_SCHOOL_ORDER
-        ];
-
-        // If user is already in a school book flow state, handle it
-        if (in_array($state, $schoolBookStates)) {
-            return $this->schoolBookController->handleSchoolBooksFlow($customerId, $message, $lang);
-        }
-
-        // Check if message triggers school books flow (new entry)
-        if ($this->schoolBookService->isSchoolBookTrigger($message)) {
-            logMessage("School books trigger detected: {$message}", 'DEBUG');
-            return $this->schoolBookController->handleSchoolBooksFlow($customerId, $message, $lang);
-        }
-
-        // Not a school books request
-        return null;
     }
 }

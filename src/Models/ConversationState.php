@@ -19,6 +19,14 @@ class ConversationState {
     const STATE_CONFIRMING_ORDER = 'confirming_order';
     const STATE_AWAITING_ORDER_CANCEL = 'awaiting_order_cancel';
 
+    // School Book states
+    const STATE_SCHOOL_BOOKS_START = 'school_books_start';
+    const STATE_SELECTING_SCHOOL = 'selecting_school';
+    const STATE_SELECTING_GRADE = 'selecting_grade';
+    const STATE_VIEWING_BOOKS = 'viewing_books';
+    const STATE_SELECTING_BOOKS = 'selecting_books';
+    const STATE_CONFIRMING_SCHOOL_ORDER = 'confirming_school_order';
+
     public function __construct() {
         $this->db = Database::getInstance();
     }

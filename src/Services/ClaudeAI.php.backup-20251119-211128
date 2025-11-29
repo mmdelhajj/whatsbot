@@ -65,25 +65,20 @@ class ClaudeAI {
             $productModel = new Product();
 
             // Build AI prompt to extract search keywords
-            $systemPrompt = "You are a smart search keyword extractor for a bookstore/stationery store.\n\n";
+            $systemPrompt = "You are a search keyword extractor for a bookstore/stationery store.\n\n";
             $systemPrompt .= "Your job: Extract English search keywords from the customer's message.\n\n";
             $systemPrompt .= "Rules:\n";
             $systemPrompt .= "1. Translate Arabic/French to English\n";
             $systemPrompt .= "2. Return ONLY search keywords (no explanations)\n";
-            $systemPrompt .= "3. IMPORTANT: Keep multi-word product types together (e.g., 'coloring book' not 'coloring')\n";
-            $systemPrompt .= "4. IMPORTANT: If customer says TWO words describing ONE product, keep both words\n";
-            $systemPrompt .= "5. Return multiple keywords separated by spaces\n\n";
+            $systemPrompt .= "3. Keywords should be product types (pen, notebook, book, etc.)\n";
+            $systemPrompt .= "4. Return multiple keywords separated by spaces\n\n";
             $systemPrompt .= "Examples:\n";
             $systemPrompt .= "Customer: 'قلم أزرق' → pen blue\n";
             $systemPrompt .= "Customer: 'هل يوجد قلم ستيلو' → pen stylo\n";
             $systemPrompt .= "Customer: 'دفتر أحمر' → notebook red\n";
             $systemPrompt .= "Customer: 'cahier' → notebook\n";
             $systemPrompt .= "Customer: 'livre' → book\n";
-            $systemPrompt .= "Customer: 'rouleau' → roll\n";
-            $systemPrompt .= "Customer: 'coloring book' → coloring book\n";
-            $systemPrompt .= "Customer: 'كتاب تلوين' → coloring book\n";
-            $systemPrompt .= "Customer: 'math book' → math book\n";
-            $systemPrompt .= "Customer: 'gift card' → gift card\n\n";
+            $systemPrompt .= "Customer: 'rouleau' → roll\n\n";
             $systemPrompt .= "Return ONLY the keywords, nothing else!";
 
             $messages = [
@@ -424,12 +419,9 @@ DESCRIPTION: [brief description]'
             logMessage("Image analyzed: {$description}", 'INFO');
 
             // Extract exact text from "TEXT ON PRODUCT:" if present
-            // Capture all lines until we hit PRODUCT TYPE or DESCRIPTION or end
             $exactText = '';
-            if (preg_match('/TEXT ON PRODUCT:\s*(.+?)(?=PRODUCT TYPE:|DESCRIPTION:|$)/is', $description, $matches)) {
+            if (preg_match('/TEXT ON PRODUCT:\s*(.+?)(?:\n|$)/i', $description, $matches)) {
                 $exactText = trim($matches[1]);
-                // Clean up: remove extra whitespace and newlines
-                $exactText = preg_replace('/\s+/', ' ', $exactText);
                 logMessage("Exact text extracted from image: {$exactText}", 'INFO');
             }
 
@@ -457,15 +449,11 @@ DESCRIPTION: [brief description]'
                 // Extract meaningful words from normalized text
                 $exactWords = preg_split('/\s+/', $normalizedExact);
                 $meaningfulWords = [];
-                // Expanded stop words to include French prepositions, articles, and generic book-related words
-                $stopWords = ['de', 'du', 'la', 'le', 'les', 'et', 'the', 'a', 'an', 'and', 'or', 'of', 'in',
-                             'par', 'pour', 'sur', 'avec', 'dans', 'sans', 'sous', 'chez', 'au', 'aux', 'un', 'une', 'des',
-                             'collection', 'programme'];
+                $stopWords = ['de', 'du', 'la', 'le', 'les', 'et', 'the', 'a', 'an', 'and', 'or', 'of', 'in'];
 
                 foreach ($exactWords as $word) {
                     $word = preg_replace('/[^a-z0-9\x{0600}-\x{06FF}]/ui', '', $word);
-                    $wordLower = mb_strtolower($word);
-                    if (mb_strlen($word) >= 3 && !in_array($wordLower, $stopWords)) {
+                    if (mb_strlen($word) >= 3 && !in_array($word, $stopWords)) {
                         $meaningfulWords[] = $word;
                     }
                 }
@@ -474,19 +462,11 @@ DESCRIPTION: [brief description]'
 
                 // Search for products containing multiple meaningful words
                 if (!empty($meaningfulWords)) {
-                    // Try searching with all meaningful words together first
-                    $searchQuery = implode(' ', $meaningfulWords);
-                    $allResults = $productModel->search($searchQuery, 200);
-                    logMessage("Searching with full text '{$searchQuery}': found " . count($allResults) . " results", 'INFO');
+                    // Try first meaningful word
+                    $allResults = $productModel->search($meaningfulWords[0], 200);
+                    logMessage("Searching with first word '{$meaningfulWords[0]}': found " . count($allResults) . " results", 'INFO');
 
-                    // If no results with full text, try first meaningful word
-                    if (empty($allResults) && !empty($meaningfulWords[0])) {
-                        $allResults = $productModel->search($meaningfulWords[0], 200);
-                        logMessage("Searching with first word '{$meaningfulWords[0]}': found " . count($allResults) . " results", 'INFO');
-                    }
-
-                    // Filter to products containing meaningful words and calculate match scores
-                    $scoredProducts = [];
+                    // Filter to products containing multiple meaningful words
                     foreach ($allResults as $product) {
                         $productNameNormalized = $this->normalizeText($product['item_name']);
                         $matchCount = 0;
@@ -499,24 +479,24 @@ DESCRIPTION: [brief description]'
                             }
                         }
 
-                        // IMPROVED: Accept products matching at least 1 meaningful word
-                        // But give higher scores to products matching more words
-                        if ($matchCount >= 1) {
+                        // Keep products that match at least 2 words (or 1 if only 1-2 total words)
+                        $requiredMatches = count($meaningfulWords) >= 3 ? 2 : 1;
+                        if ($matchCount >= $requiredMatches) {
                             $product['match_score'] = $matchCount;
                             $product['matched_words'] = implode(', ', $matchedWords);
-                            $scoredProducts[] = $product;
+                            $products[] = $product;
                         }
                     }
 
-                    // Sort by match score (highest first)
-                    if (!empty($scoredProducts)) {
-                        usort($scoredProducts, function($a, $b) {
+                    if (!empty($products)) {
+                        // Sort by match score
+                        usort($products, function($a, $b) {
                             return ($b['match_score'] ?? 0) - ($a['match_score'] ?? 0);
                         });
-                        $products = $scoredProducts;
-                        logMessage("Found " . count($products) . " products matching words from exact text (top match: {$products[0]['item_name']}, score: {$products[0]['match_score']})", 'INFO');
+
+                        logMessage("Found " . count($products) . " products matching words from exact text (top match: {$products[0]['item_name']})", 'INFO');
                     } else {
-                        logMessage("No products matched any meaningful words, will try keywords", 'INFO');
+                        logMessage("No products matched multiple words, will try keywords", 'INFO');
                     }
                 }
             }

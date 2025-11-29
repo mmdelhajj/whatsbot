@@ -17,12 +17,21 @@ $db = Database::getInstance();
 // Handle delete single order
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_order'])) {
     $orderId = $_POST['order_id'] ?? 0;
+    $orderType = $_POST['order_type'] ?? 'regular';
     if ($orderId) {
-        // Delete order items first
-        $db->query("DELETE FROM order_items WHERE order_id = ?", [$orderId]);
-        // Delete order
-        $db->query("DELETE FROM orders WHERE id = ?", [$orderId]);
-        $successMessage = "Order #{$orderId} deleted successfully! ✅";
+        if ($orderType === 'book') {
+            // Delete book order items first
+            $db->query("DELETE FROM book_order_items WHERE book_order_id = ?", [$orderId]);
+            // Delete book order
+            $db->query("DELETE FROM book_orders WHERE id = ?", [$orderId]);
+            $successMessage = "Book Order #{$orderId} deleted successfully! ✅";
+        } else {
+            // Delete regular order items first
+            $db->query("DELETE FROM order_items WHERE order_id = ?", [$orderId]);
+            // Delete regular order
+            $db->query("DELETE FROM orders WHERE id = ?", [$orderId]);
+            $successMessage = "Order #{$orderId} deleted successfully! ✅";
+        }
     }
 }
 
@@ -30,6 +39,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_order'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_all_orders'])) {
     $db->query("DELETE FROM order_items");
     $db->query("DELETE FROM orders");
+    $db->query("DELETE FROM book_order_items");
+    $db->query("DELETE FROM book_orders");
     $successMessage = "All orders deleted successfully! ✅";
 }
 
@@ -37,68 +48,119 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_all_orders']))
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
     $orderId = $_POST['order_id'] ?? 0;
     $newStatus = $_POST['status'] ?? '';
+    $orderType = $_POST['order_type'] ?? 'regular';
 
     if ($orderId && $newStatus) {
-        // Get order details before updating
-        $order = $db->fetchOne(
-            "SELECT o.*, c.phone, c.preferred_language
-             FROM orders o
-             LEFT JOIN customers c ON o.customer_id = c.id
-             WHERE o.id = ?",
-            [$orderId]
-        );
-
-        if ($order) {
-            // Get order items
-            $order['items'] = $db->fetchAll(
-                "SELECT * FROM order_items WHERE order_id = ?",
+        if ($orderType === 'book') {
+            // Handle book order status update
+            $order = $db->fetchOne(
+                "SELECT bo.*, c.phone, c.preferred_language, c.name as customer_name
+                 FROM book_orders bo
+                 LEFT JOIN customers c ON bo.customer_id = c.id
+                 WHERE bo.id = ?",
                 [$orderId]
             );
 
-            // Update status
-            $db->update('orders',
-                ['status' => $newStatus],
-                'id = :id',
-                ['id' => $orderId]
-            );
-
-            // Send WhatsApp notification to customer
-            try {
-                // Detect customer's language (default to English)
-                $customerLang = $order['preferred_language'] ?? 'en';
-                if (!in_array($customerLang, ['en', 'ar', 'fr'])) {
-                    $customerLang = 'en';
-                }
-
-                // Create notification message
-                $notificationMessage = ResponseTemplates::orderStatusNotification(
-                    $customerLang,
-                    $order,
-                    $newStatus
+            if ($order) {
+                // Get book order items
+                $order['items'] = $db->fetchAll(
+                    "SELECT boi.*, sb.book_title as product_name
+                     FROM book_order_items boi
+                     JOIN school_books sb ON boi.school_book_id = sb.id
+                     WHERE boi.book_order_id = ?",
+                    [$orderId]
                 );
 
-                // Send via ProxSMS
-                $proxSMS = new ProxSMSService();
-                $proxSMS->sendMessage($order['phone'], $notificationMessage);
+                // Update status
+                $db->update('book_orders',
+                    ['status' => $newStatus],
+                    'id = :id',
+                    ['id' => $orderId]
+                );
 
-                $successMessage = "Order #{$orderId} status updated to: {$newStatus} - Customer notified via WhatsApp ✅";
-            } catch (Exception $e) {
-                logMessage("Failed to send status notification: " . $e->getMessage(), 'ERROR');
-                $successMessage = "Order #{$orderId} status updated to: {$newStatus} - Failed to send notification ⚠️";
+                // Send WhatsApp notification
+                try {
+                    $customerLang = $order['preferred_language'] ?? 'en';
+                    if (!in_array($customerLang, ['en', 'ar', 'fr'])) {
+                        $customerLang = 'en';
+                    }
+
+                    $order['order_number'] = 'BOOK-' . $orderId;
+                    $notificationMessage = ResponseTemplates::orderStatusNotification(
+                        $customerLang,
+                        $order,
+                        $newStatus
+                    );
+
+                    $proxSMS = new ProxSMSService();
+                    $proxSMS->sendMessage($order['phone'], $notificationMessage);
+
+                    $successMessage = "Book Order #{$orderId} status updated to: {$newStatus} - Customer notified via WhatsApp ✅";
+                } catch (Exception $e) {
+                    logMessage("Failed to send status notification: " . $e->getMessage(), 'ERROR');
+                    $successMessage = "Book Order #{$orderId} status updated to: {$newStatus} - Failed to send notification ⚠️";
+                }
+            }
+        } else {
+            // Handle regular order status update
+            $order = $db->fetchOne(
+                "SELECT o.*, c.phone, c.preferred_language
+                 FROM orders o
+                 LEFT JOIN customers c ON o.customer_id = c.id
+                 WHERE o.id = ?",
+                [$orderId]
+            );
+
+            if ($order) {
+                // Get order items
+                $order['items'] = $db->fetchAll(
+                    "SELECT * FROM order_items WHERE order_id = ?",
+                    [$orderId]
+                );
+
+                // Update status
+                $db->update('orders',
+                    ['status' => $newStatus],
+                    'id = :id',
+                    ['id' => $orderId]
+                );
+
+                // Send WhatsApp notification to customer
+                try {
+                    $customerLang = $order['preferred_language'] ?? 'en';
+                    if (!in_array($customerLang, ['en', 'ar', 'fr'])) {
+                        $customerLang = 'en';
+                    }
+
+                    $notificationMessage = ResponseTemplates::orderStatusNotification(
+                        $customerLang,
+                        $order,
+                        $newStatus
+                    );
+
+                    $proxSMS = new ProxSMSService();
+                    $proxSMS->sendMessage($order['phone'], $notificationMessage);
+
+                    $successMessage = "Order #{$orderId} status updated to: {$newStatus} - Customer notified via WhatsApp ✅";
+                } catch (Exception $e) {
+                    logMessage("Failed to send status notification: " . $e->getMessage(), 'ERROR');
+                    $successMessage = "Order #{$orderId} status updated to: {$newStatus} - Failed to send notification ⚠️";
+                }
             }
         }
     }
 }
 
-// Get all orders with items
-$orders = $db->fetchAll("
+// Get all regular orders with items
+$regularOrders = $db->fetchAll("
     SELECT
         o.*,
         c.name as customer_name,
         c.phone as customer_phone,
         c.address as customer_address,
         c.email as customer_email,
-        COUNT(oi.id) as items_count
+        COUNT(oi.id) as items_count,
+        'regular' as order_type
     FROM orders o
     LEFT JOIN customers c ON o.customer_id = c.id
     LEFT JOIN order_items oi ON o.id = oi.order_id
@@ -106,25 +168,89 @@ $orders = $db->fetchAll("
     ORDER BY o.created_at DESC
 ");
 
-// Get order items for each order
-foreach ($orders as &$order) {
+// Get order items for each regular order
+foreach ($regularOrders as &$order) {
     $order['items'] = $db->fetchAll(
         "SELECT * FROM order_items WHERE order_id = ?",
         [$order['id']]
     );
 }
 
-// Get statistics
-$stats = $db->fetchOne("
+// Get all book orders
+$bookOrders = $db->fetchAll("
+    SELECT
+        bo.id,
+        CONCAT('BOOK-', bo.id) as order_number,
+        bo.customer_id,
+        bo.school_name,
+        bo.grade_level,
+        bo.total_amount,
+        bo.status,
+        bo.notes,
+        bo.created_at,
+        bo.updated_at,
+        c.name as customer_name,
+        c.phone as customer_phone,
+        c.address as customer_address,
+        c.email as customer_email,
+        COUNT(boi.id) as items_count,
+        'book' as order_type
+    FROM book_orders bo
+    LEFT JOIN customers c ON bo.customer_id = c.id
+    LEFT JOIN book_order_items boi ON bo.id = boi.book_order_id
+    GROUP BY bo.id
+    ORDER BY bo.created_at DESC
+");
+
+// Get items for each book order
+foreach ($bookOrders as &$order) {
+    $order['items'] = $db->fetchAll(
+        "SELECT boi.*, sb.book_title as product_name, boi.unit_price,
+                (boi.quantity * boi.unit_price) as total_price
+         FROM book_order_items boi
+         JOIN school_books sb ON boi.school_book_id = sb.id
+         WHERE boi.book_order_id = ?",
+        [$order['id']]
+    );
+}
+
+// Combine and sort all orders by date
+$orders = array_merge($regularOrders, $bookOrders);
+usort($orders, function($a, $b) {
+    return strtotime($b['created_at']) - strtotime($a['created_at']);
+});
+
+// Get statistics (combined)
+$regularStats = $db->fetchOne("
     SELECT
         COUNT(*) as total_orders,
-        SUM(total_amount) as total_revenue,
+        COALESCE(SUM(total_amount), 0) as total_revenue,
         COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_orders,
         COUNT(CASE WHEN status = 'preparing' THEN 1 END) as preparing_orders,
         COUNT(CASE WHEN status = 'on_the_way' THEN 1 END) as shipping_orders,
         COUNT(CASE WHEN DATE(created_at) = CURDATE() THEN 1 END) as today_orders
     FROM orders
 ");
+
+$bookStats = $db->fetchOne("
+    SELECT
+        COUNT(*) as total_orders,
+        COALESCE(SUM(total_amount), 0) as total_revenue,
+        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_orders,
+        COUNT(CASE WHEN status = 'preparing' THEN 1 END) as preparing_orders,
+        COUNT(CASE WHEN status = 'on_the_way' THEN 1 END) as shipping_orders,
+        COUNT(CASE WHEN DATE(created_at) = CURDATE() THEN 1 END) as today_orders
+    FROM book_orders
+");
+
+$stats = [
+    'total_orders' => ($regularStats['total_orders'] ?? 0) + ($bookStats['total_orders'] ?? 0),
+    'total_revenue' => ($regularStats['total_revenue'] ?? 0) + ($bookStats['total_revenue'] ?? 0),
+    'pending_orders' => ($regularStats['pending_orders'] ?? 0) + ($bookStats['pending_orders'] ?? 0),
+    'preparing_orders' => ($regularStats['preparing_orders'] ?? 0) + ($bookStats['preparing_orders'] ?? 0),
+    'shipping_orders' => ($regularStats['shipping_orders'] ?? 0) + ($bookStats['shipping_orders'] ?? 0),
+    'today_orders' => ($regularStats['today_orders'] ?? 0) + ($bookStats['today_orders'] ?? 0),
+];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -258,11 +384,21 @@ $stats = $db->fetchOne("
             </div>
         <?php else: ?>
             <?php foreach ($orders as $order): ?>
-                <div class="order-card">
+                <div class="order-card" style="<?= ($order['order_type'] ?? 'regular') === 'book' ? 'border-left: 4px solid #10b981;' : '' ?>">
                     <div class="order-header">
                         <div>
-                            <div class="order-number"><?= htmlspecialchars($order['order_number']) ?></div>
+                            <div class="order-number">
+                                <?= htmlspecialchars($order['order_number']) ?>
+                                <?php if (($order['order_type'] ?? 'regular') === 'book'): ?>
+                                    <span style="background: #d1fae5; color: #059669; padding: 3px 8px; border-radius: 4px; font-size: 0.7em; margin-left: 8px;">📚 SCHOOL BOOKS</span>
+                                <?php endif; ?>
+                            </div>
                             <div class="order-date">📅 <?= formatDateTime($order['created_at'], 'F d, Y • H:i') ?></div>
+                            <?php if (($order['order_type'] ?? 'regular') === 'book'): ?>
+                                <div style="margin-top: 5px; font-size: 0.9em; color: #059669;">
+                                    🏫 <?= htmlspecialchars($order['school_name']) ?> - <?= htmlspecialchars($order['grade_level']) ?>
+                                </div>
+                            <?php endif; ?>
                         </div>
                         <span class="badge badge-<?= $order['status'] ?>">
                             <?= ucwords(str_replace('_', ' ', $order['status'])) ?>
@@ -274,7 +410,7 @@ $stats = $db->fetchOne("
                             <h4>👤 Customer Information</h4>
                             <div class="customer-info">
                                 <strong>Name:</strong> <?= htmlspecialchars($order['customer_name'] ?? 'N/A') ?><br>
-                                <strong>Phone:</strong> <?= htmlspecialchars($order['customer_phone']) ?><br>
+                                <strong>Phone:</strong> <?= htmlspecialchars($order['customer_phone'] ?? 'N/A') ?><br>
                                 <strong>Email:</strong> <?= htmlspecialchars($order['customer_email'] ?? 'N/A') ?><br>
                                 <strong>Address:</strong> <?= htmlspecialchars($order['customer_address'] ?? 'N/A') ?>
                             </div>
@@ -305,6 +441,7 @@ $stats = $db->fetchOne("
                         <div class="status-form">
                             <form method="POST" style="display: inline-flex; gap: 10px; align-items: center;">
                                 <input type="hidden" name="order_id" value="<?= $order['id'] ?>">
+                                <input type="hidden" name="order_type" value="<?= $order['order_type'] ?? 'regular' ?>">
                                 <select name="status" class="status-select">
                                     <option value="pending" <?= $order['status'] === 'pending' ? 'selected' : '' ?>>⏳ Pending</option>
                                     <option value="confirmed" <?= $order['status'] === 'confirmed' ? 'selected' : '' ?>>✅ Confirmed</option>
@@ -318,12 +455,13 @@ $stats = $db->fetchOne("
                             </form>
                             <form method="POST" style="display: inline;" onsubmit="return confirm('⚠️ Are you sure you want to delete order <?= htmlspecialchars($order['order_number']) ?>?');">
                                 <input type="hidden" name="order_id" value="<?= $order['id'] ?>">
+                                <input type="hidden" name="order_type" value="<?= $order['order_type'] ?? 'regular' ?>">
                                 <button type="submit" name="delete_order" class="delete-btn">🗑️ Delete</button>
                             </form>
                         </div>
                     </div>
 
-                    <?php if ($order['notes']): ?>
+                    <?php if (!empty($order['notes'])): ?>
                         <div style="margin-top: 15px; padding: 10px; background: #fef3c7; border-radius: 6px; font-size: 0.9em;">
                             📝 <strong>Notes:</strong> <?= htmlspecialchars($order['notes']) ?>
                         </div>
