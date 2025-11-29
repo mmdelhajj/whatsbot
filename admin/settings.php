@@ -286,41 +286,20 @@ $currentSettings = [
             <h2>🔑 License Information</h2>
             <div class="settings-grid">
                 <div class="form-group">
-                    <label>License Key</label>
-                    <input type="text" value="<?= htmlspecialchars($licenseInfo['key'] ?: 'Not configured') ?>" readonly style="background: #f3f4f6; cursor: not-allowed;">
-                </div>
-                <div class="form-group">
-                    <label>Domain</label>
-                    <input type="text" value="<?= htmlspecialchars($licenseInfo['domain'] ?: 'Not configured') ?>" readonly style="background: #f3f4f6; cursor: not-allowed;">
-                </div>
-                <div class="form-group">
-                    <label>License Server</label>
-                    <input type="text" value="<?= htmlspecialchars($licenseInfo['server_url']) ?>" readonly style="background: #f3f4f6; cursor: not-allowed;">
-                </div>
-                <div class="form-group">
                     <label>Status</label>
                     <?php if ($licenseStatus && $licenseStatus['success']): ?>
-                        <input type="text" value="✅ Valid - <?= htmlspecialchars($licenseStatus['data']['installation_type'] ?? 'active') ?>" readonly style="background: #d1fae5; color: #059669; cursor: not-allowed; font-weight: bold;">
+                        <input type="text" value="✅ Valid" readonly style="background: #d1fae5; color: #059669; cursor: not-allowed; font-weight: bold;">
                     <?php elseif ($licenseStatus): ?>
                         <input type="text" value="❌ <?= htmlspecialchars($licenseStatus['message'] ?? 'Invalid') ?>" readonly style="background: #fee2e2; color: #dc2626; cursor: not-allowed; font-weight: bold;">
                     <?php else: ?>
                         <input type="text" value="⚠️ Cannot connect to license server" readonly style="background: #fef3c7; color: #d97706; cursor: not-allowed; font-weight: bold;">
                     <?php endif; ?>
                 </div>
-                <?php if ($licenseStatus && $licenseStatus['success']): ?>
                 <div class="form-group">
-                    <label>Customer</label>
-                    <input type="text" value="<?= htmlspecialchars($licenseStatus['data']['customer'] ?? '-') ?>" readonly style="background: #f3f4f6; cursor: not-allowed;">
+                    <label>License Key</label>
+                    <input type="text" value="<?= htmlspecialchars($licenseInfo['key'] ?: 'Not configured') ?>" readonly style="background: #f3f4f6; cursor: not-allowed;">
                 </div>
-                <div class="form-group">
-                    <label>Expires</label>
-                    <input type="text" value="<?= htmlspecialchars($licenseStatus['data']['expires_at'] ?? '-') ?> (<?= $licenseStatus['data']['days_left'] ?? 0 ?> days left)" readonly style="background: #f3f4f6; cursor: not-allowed;">
-                </div>
-                <?php endif; ?>
             </div>
-            <small style="color: #6b7280; display: block; margin-top: 10px;">
-                ℹ️ License information is read-only and cannot be changed from this panel. Contact your administrator to modify license settings.
-            </small>
         </div>
 
         <form method="POST">

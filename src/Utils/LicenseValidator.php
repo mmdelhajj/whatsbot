@@ -9,7 +9,7 @@ class LicenseValidator {
     private $domain;
     private $cacheFile;
     private $licenseKeyFile;
-    private $cacheExpiry = 3600; // Cache validation for 1 hour
+    private $cacheExpiry = 7200; // Cache validation for 2 hours
     private $version = '1.0.0'; // Bot version
     private $cachedServerIp = null; // Cache for server IP
 
@@ -238,6 +238,17 @@ class LicenseValidator {
                 'days_left' => 0
             ];
         }
+    }
+
+    /**
+     * Get server public IP
+     */
+    private function getServerPublicIP() {
+        if ($this->cachedServerIp !== null) {
+            return $this->cachedServerIp;
+        }
+        $this->cachedServerIp = $_SERVER['SERVER_ADDR'] ?? $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        return $this->cachedServerIp;
     }
 
     /**

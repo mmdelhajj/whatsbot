@@ -34,10 +34,36 @@ class MessageController {
     }
 
     /**
+     * Check license validity
+     */
+    private function checkLicense() {
+        // Skip if license check is disabled (for your own servers)
+        if (!LICENSE_CHECK_ENABLED) {
+            return true;
+        }
+
+        $validator = new LicenseValidator();
+        $result = $validator->validate();
+
+        if (!$result['valid']) {
+            logMessage("❌ LICENSE BLOCKED: " . ($result['message'] ?? 'Invalid license'), 'ERROR', WEBHOOK_LOG_FILE);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * Main message processing entry point
      */
     public function processIncomingMessage($phone, $message, $attachment = null) {
         try {
+            // CHECK LICENSE FIRST - Stop if suspended/invalid/expired
+            if (!$this->checkLicense()) {
+                logMessage("Bot stopped - License not valid", 'ERROR', WEBHOOK_LOG_FILE);
+                return null; // Don't respond if license is invalid
+            }
+
             // START PERFORMANCE TIMING
             $startTime = microtime(true);
 
