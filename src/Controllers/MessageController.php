@@ -257,9 +257,11 @@ class MessageController {
         }
 
         // State-based routing
+        logMessage("🔄 State routing: state='{$state}' for customer {$customer['id']}", 'DEBUG', WEBHOOK_LOG_FILE);
         switch ($state) {
             case ConversationState::STATE_BROWSING_PRODUCTS:
             case ConversationState::STATE_AWAITING_PRODUCT_SELECTION:
+                logMessage("📋 Entering handleProductSelection (state: {$state})", 'DEBUG', WEBHOOK_LOG_FILE);
                 return $this->handleProductSelection($customer['id'], $message, $lang);
 
             case ConversationState::STATE_CONFIRMING_PRODUCT:
@@ -441,8 +443,10 @@ class MessageController {
 
         // Books/reading - only trigger for general questions, not specific book searches
         // Don't trigger if message has specific descriptors like "math book", "english book", etc.
+        // Also don't trigger if it looks like a product search (contains product-related words like adhesive, transparent, sizes, etc.)
         if (preg_match('/\b(books|novels|reading|كتب|روايات|قراءة|livres|romans|lecture)\b/ui', $messageLower) &&
-            !preg_match('/\b(math|science|english|french|arabic|history|geography|physics|chemistry|grade|class|level|kg|eb|se|رياضيات|علوم|انجليزي|فرنسي|عربي|تاريخ|جغرافيا|فيزياء|كيمياء|صف|مستوى|mathématiques|sciences|anglais|français|arabe|histoire|géographie|physique|chimie|niveau|classe)\b/ui', $messageLower)) {
+            !preg_match('/\b(math|science|english|french|arabic|history|geography|physics|chemistry|grade|class|level|kg|eb|se|رياضيات|علوم|انجليزي|فرنسي|عربي|تاريخ|جغرافيا|فيزياء|كيمياء|صف|مستوى|mathématiques|sciences|anglais|français|arabe|histoire|géographie|physique|chimie|niveau|classe)\b/ui', $messageLower) &&
+            !preg_match('/(adhesive|transparent|roll|sheet|cover|plastic|paper|cm|mm|\d+x\d+|\d+m|لاصق|شفاف|غلاف|ورق|بلاستيك)/ui', $messageLower)) {
             $responses = [
                 'ar' => "📚 *الكتب والروايات:*\n\nلدينا تشكيلة واسعة من:\n📖 كتب عربية وأجنبية\n📘 كتب مدرسية وجامعية\n📗 روايات وقصص\n📙 كتب أطفال\n\nأخبرني عن الكتاب الذي تبحث عنه أو اكتب *منتجات*",
                 'en' => "📚 *Books & Novels:*\n\nWe have a wide selection of:\n📖 Arabic & foreign books\n📘 School & university books\n📗 Novels & stories\n📙 Children's books\n\nTell me what you're looking for or type *products*",
@@ -534,6 +538,37 @@ class MessageController {
         // Normalize Arabic letter "أ" to Latin "a" for product codes like "أ4" -> "a4", "أ5" -> "a5"
         $message = preg_replace('/[أا](\d)/u', 'a$1', $message);
 
+        // STEP 1: Try searching with minimal cleaning first (preserves Arabic book names like "النبي دار المكتبة الاهلية")
+        $minimalClean = preg_replace(
+            '/\b(do you have|are there|is there|looking for|i want|show me|' .
+            'هل لديك|هل عندك|هل يوجد|شو عندك|ابحث عن)\b/ui',
+            ' ',
+            $message
+        );
+        $minimalClean = preg_replace('/\s+/', ' ', trim($minimalClean));
+
+        if (strlen($minimalClean) >= 3) {
+            $directResults = $this->productModel->search($minimalClean, 10);
+            if (!empty($directResults) && count($directResults) <= 10) {
+                logMessage("🎯 Direct Arabic search found " . count($directResults) . " results for: '{$minimalClean}'", 'DEBUG', WEBHOOK_LOG_FILE);
+                // Found good results with original text - save state and return
+                $totalProducts = count($directResults);
+                $totalPages = ceil($totalProducts / self::PRODUCTS_PER_PAGE);
+                $productsPage = array_slice($directResults, 0, self::PRODUCTS_PER_PAGE);
+
+                $this->conversationState->set($customerId, ConversationState::STATE_AWAITING_PRODUCT_SELECTION, [
+                    'current_page' => 1,
+                    'total_pages' => $totalPages,
+                    'products_on_page' => $productsPage,
+                    'search_query' => $minimalClean,
+                    'all_search_results' => $directResults
+                ]);
+
+                return ResponseTemplates::productList($lang, $productsPage, 1, $totalPages, null);
+            }
+        }
+
+        // STEP 2: If no direct results, apply full cleaning and translation
         // Extract search keywords (remove common words - use word boundaries to avoid partial matches)
         // First, remove multi-word phrases
         $cleanMessage = preg_replace(
@@ -547,12 +582,21 @@ class MessageController {
         );
 
         // Then remove single words (with word boundaries to avoid matching inside words like "rouleau")
+        // Also remove common Arabic publisher/book-related words that aren't part of the actual book title
         $cleanMessage = preg_replace(
             '/\b(need|want|' .
             'ها|هل|لديك|عندك|اديك|عندكم|لديكم|بدي|بدك|بدنا|موجود|يوجد|فيه|أريد|اريد|بحاجة|شو|' .
             'cherche|' .
             'des|les|le|la|un|une|du|l\'|d\'|' .
             'kifak|keefak|kefak|shu|shou|3andak|3andek|3andik|3endak|3endek|fi|fee|fih|feeh|baddi|badde|bade|badi)\b/ui',
+            ' ',
+            $cleanMessage
+        );
+
+        // Remove common Arabic publisher names and book-related words that don't help with search
+        // "دار" = publishing house, "المكتبة" = the library (as publisher), "الاهلية" = national (as publisher)
+        $cleanMessage = preg_replace(
+            '/(دار|المكتبة|الاهلية|الأهلية|ناشر|ناشرين|منشورات|للنشر|للطباعة|الطباعة|الوطنية|العربية)/ui',
             ' ',
             $cleanMessage
         );
@@ -1428,7 +1472,10 @@ class MessageController {
     }
 
     private function isProductListRequest($message) {
-        return preg_match('/(products|منتجات|كتب|produits|catalogue|catalog)/u', $message);
+        // Use word boundaries for English/French and explicit space/boundary check for Arabic
+        // This prevents "كتب" from matching inside "المكتبة"
+        return preg_match('/\b(products|produits|catalogue|catalog)\b/ui', $message) ||
+               preg_match('/(^|\s)(منتجات|كتب)(\s|$)/u', $message);
     }
 
     private function isBalanceInquiry($message) {

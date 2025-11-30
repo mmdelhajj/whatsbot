@@ -13,11 +13,14 @@ class Product {
 
     /**
      * Search products by name or code (OPTIMIZED with fulltext)
-     * Includes out-of-stock products (shows expected arrival date if set)
+     * Only shows: in-stock products OR out-of-stock with expected arrival date
      */
     public function search($query, $limit = 10) {
         // Debug logging to track search queries
         logMessage("🔍 Product search called with query: '{$query}' (limit: {$limit})", 'DEBUG', WEBHOOK_LOG_FILE);
+
+        // Availability filter: in stock OR has expected arrival date
+        $availabilityFilter = "(stock_quantity > 0 OR expected_arrival IS NOT NULL)";
 
         // For short queries or exact codes, use LIKE (faster for exact matches)
         if (strlen($query) < 3 || preg_match('/^\d+$/', $query)) {
@@ -25,6 +28,7 @@ class Product {
             return $this->db->fetchAll(
                 "SELECT * FROM product_info
                  WHERE (item_code LIKE ? OR item_name LIKE ?)
+                 AND {$availabilityFilter}
                  ORDER BY
                     CASE
                         WHEN item_code = ? THEN 1
@@ -47,6 +51,7 @@ class Product {
             $phraseResults = $this->db->fetchAll(
                 "SELECT * FROM product_info
                  WHERE item_name LIKE ?
+                 AND {$availabilityFilter}
                  ORDER BY stock_quantity > 0 DESC, item_name
                  LIMIT ?",
                 ["%{$query}%", $limit]
@@ -95,6 +100,7 @@ class Product {
                 $flexibleResults = $this->db->fetchAll(
                     "SELECT * FROM product_info
                      WHERE {$flexibleWhere}
+                     AND {$availabilityFilter}
                      ORDER BY stock_quantity > 0 DESC, item_name
                      LIMIT ?",
                     array_merge($flexibleParams, [$limit])
@@ -120,6 +126,7 @@ class Product {
                  FROM product_info
                  WHERE (MATCH(item_name, description) AGAINST(? IN BOOLEAN MODE)
                     OR item_code LIKE ?)
+                 AND {$availabilityFilter}
                  ORDER BY stock_quantity > 0 DESC, relevance DESC, item_name
                  LIMIT ?",
                 [$booleanQuery, $booleanQuery, "%{$query}%", $limit]
@@ -132,6 +139,7 @@ class Product {
              FROM product_info
              WHERE (MATCH(item_name, description) AGAINST(? IN NATURAL LANGUAGE MODE)
                 OR item_code LIKE ?)
+             AND {$availabilityFilter}
              ORDER BY stock_quantity > 0 DESC, relevance DESC, item_name
              LIMIT ?",
             [$query, $query, "%{$query}%", $limit]

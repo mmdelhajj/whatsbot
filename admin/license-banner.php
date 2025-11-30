@@ -43,10 +43,8 @@ if (!$licenseStatus['valid']) {
         $message = "LICENSE EXPIRING SOON - {$daysLeft} DAYS LEFT";
         $details = 'Contact support to renew your license.';
     } else {
-        $bannerClass = 'license-active';
-        $icon = '✅';
-        $message = "LICENSE ACTIVE - {$daysLeft} DAYS REMAINING";
-        $details = 'Thank you for your support!';
+        // License is active with plenty of time - don't show banner
+        return;
     }
 }
 ?>
