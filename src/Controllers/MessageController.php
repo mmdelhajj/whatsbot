@@ -567,6 +567,11 @@ class MessageController {
 
         // Translate common Arabic/French/Lebanese product names to match inventory
         $translations = [
+            // Famous books (Arabic)
+            'النبي' => 'Prophet Gibran',
+            'الأمير الصغير' => 'Little Prince',
+            'جبران خليل جبران' => 'Gibran Khalil',
+            'جبران' => 'Gibran',
             // Popular toys (Arabic)
             'بربي' => 'Barbie',
             'باربي' => 'Barbie',
