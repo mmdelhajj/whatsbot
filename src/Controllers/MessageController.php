@@ -1688,22 +1688,39 @@ class MessageController {
 
             // Create caption with product details AND confirmation prompt (all in one message)
             $price = number_format($product['price'], 0);
-            $stock = $product['stock_quantity'] > 0 ? '✅' : '❌';
+
+            // Check stock and expected arrival
+            $stockLine = '';
+            if ($product['stock_quantity'] > 0) {
+                $stockLine = "📦 Stock: ✅";
+            } else {
+                // Out of stock - check for expected arrival date
+                $arrivalInfo = '';
+                if (!empty($product['expected_arrival'])) {
+                    $arrivalDate = date('d/m/Y', strtotime($product['expected_arrival']));
+                    $arrivalInfo = [
+                        'ar' => "\n📅 متوقع الوصول: {$arrivalDate}",
+                        'en' => "\n📅 Expected arrival: {$arrivalDate}",
+                        'fr' => "\n📅 Arrivée prévue: {$arrivalDate}"
+                    ];
+                }
+                $stockLine = "📦 Stock: ❌ Out of Stock" . ($arrivalInfo[$lang] ?? $arrivalInfo['en'] ?? '');
+            }
 
             $captions = [
                 'ar' => "*{$product['item_name']}*\n\n" .
                         "💰 السعر: {$price} " . CURRENCY . "\n" .
-                        "📦 المخزون: {$stock}\n\n" .
+                        ($product['stock_quantity'] > 0 ? "📦 المخزون: ✅" : "📦 المخزون: ❌ غير متوفر" . (!empty($product['expected_arrival']) ? "\n📅 متوقع الوصول: " . date('d/m/Y', strtotime($product['expected_arrival'])) : "")) . "\n\n" .
                         "👉 اكتب *1* للتأكيد والطلب\n" .
                         "📝 أو ابحث عن منتج آخر",
                 'en' => "*{$product['item_name']}*\n\n" .
                         "💰 Price: {$price} " . CURRENCY . "\n" .
-                        "📦 Stock: {$stock}\n\n" .
+                        ($product['stock_quantity'] > 0 ? "📦 Stock: ✅" : "📦 Stock: ❌ Out of Stock" . (!empty($product['expected_arrival']) ? "\n📅 Expected arrival: " . date('d/m/Y', strtotime($product['expected_arrival'])) : "")) . "\n\n" .
                         "👉 Type *1* to confirm and order\n" .
                         "📝 Or search for another product",
                 'fr' => "*{$product['item_name']}*\n\n" .
                         "💰 Prix: {$price} " . CURRENCY . "\n" .
-                        "📦 Stock: {$stock}\n\n" .
+                        ($product['stock_quantity'] > 0 ? "📦 Stock: ✅" : "📦 Stock: ❌ Rupture de stock" . (!empty($product['expected_arrival']) ? "\n📅 Arrivée prévue: " . date('d/m/Y', strtotime($product['expected_arrival'])) : "")) . "\n\n" .
                         "👉 Tapez *1* pour confirmer et commander\n" .
                         "📝 Ou recherchez un autre produit"
             ];

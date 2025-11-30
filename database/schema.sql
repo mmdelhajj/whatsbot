@@ -210,6 +210,7 @@ CREATE TABLE `product_info` (
   `item_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `price` decimal(15,2) DEFAULT '0.00',
   `stock_quantity` int DEFAULT '0',
+  `expected_arrival` date DEFAULT NULL,
   `category` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `description` text COLLATE utf8mb4_unicode_ci,
   `image_url` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
