@@ -121,10 +121,26 @@ class ResponseTemplates {
             $num = $index + 1;
             $name = $product['item_name'];
             $price = number_format($product['price'], 0);
-            $stock = $product['stock_quantity'] > 0 ? '✅' : '❌';
+
+            // Show stock status with expected arrival for out-of-stock items
+            if ($product['stock_quantity'] > 0) {
+                $stockInfo = '✅';
+            } else {
+                // Out of stock - check for expected arrival
+                if (!empty($product['expected_arrival'])) {
+                    $arrivalDate = date('d/m/Y', strtotime($product['expected_arrival']));
+                    $stockInfo = [
+                        'ar' => "❌ (متوقع: {$arrivalDate})",
+                        'en' => "❌ (arriving: {$arrivalDate})",
+                        'fr' => "❌ (arrivée: {$arrivalDate})"
+                    ][$lang] ?? "❌ (arriving: {$arrivalDate})";
+                } else {
+                    $stockInfo = '❌';
+                }
+            }
 
             $message .= "*{$num}.* {$name}\n";
-            $message .= "   💰 {$price} " . CURRENCY . " {$stock}\n\n";
+            $message .= "   💰 {$price} " . CURRENCY . " {$stockInfo}\n\n";
         }
 
         $footer = [

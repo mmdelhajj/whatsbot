@@ -13,7 +13,7 @@ class Product {
 
     /**
      * Search products by name or code (OPTIMIZED with fulltext)
-     * ONLY returns products IN STOCK
+     * Includes out-of-stock products (shows expected arrival date if set)
      */
     public function search($query, $limit = 10) {
         // Debug logging to track search queries
@@ -25,13 +25,13 @@ class Product {
             return $this->db->fetchAll(
                 "SELECT * FROM product_info
                  WHERE (item_code LIKE ? OR item_name LIKE ?)
-                   AND stock_quantity > 0
                  ORDER BY
                     CASE
                         WHEN item_code = ? THEN 1
                         WHEN item_name LIKE ? THEN 2
                         ELSE 3
                     END,
+                    stock_quantity > 0 DESC,
                     item_name
                  LIMIT ?",
                 [$searchTerm, $searchTerm, $query, $query . '%', $limit]
@@ -47,8 +47,7 @@ class Product {
             $phraseResults = $this->db->fetchAll(
                 "SELECT * FROM product_info
                  WHERE item_name LIKE ?
-                   AND stock_quantity > 0
-                 ORDER BY item_name
+                 ORDER BY stock_quantity > 0 DESC, item_name
                  LIMIT ?",
                 ["%{$query}%", $limit]
             );
@@ -96,8 +95,7 @@ class Product {
                 $flexibleResults = $this->db->fetchAll(
                     "SELECT * FROM product_info
                      WHERE {$flexibleWhere}
-                       AND stock_quantity > 0
-                     ORDER BY item_name
+                     ORDER BY stock_quantity > 0 DESC, item_name
                      LIMIT ?",
                     array_merge($flexibleParams, [$limit])
                 );
@@ -122,8 +120,7 @@ class Product {
                  FROM product_info
                  WHERE (MATCH(item_name, description) AGAINST(? IN BOOLEAN MODE)
                     OR item_code LIKE ?)
-                   AND stock_quantity > 0
-                 ORDER BY relevance DESC, item_name
+                 ORDER BY stock_quantity > 0 DESC, relevance DESC, item_name
                  LIMIT ?",
                 [$booleanQuery, $booleanQuery, "%{$query}%", $limit]
             );
@@ -135,8 +132,7 @@ class Product {
              FROM product_info
              WHERE (MATCH(item_name, description) AGAINST(? IN NATURAL LANGUAGE MODE)
                 OR item_code LIKE ?)
-               AND stock_quantity > 0
-             ORDER BY relevance DESC, item_name
+             ORDER BY stock_quantity > 0 DESC, relevance DESC, item_name
              LIMIT ?",
             [$query, $query, "%{$query}%", $limit]
         );
