@@ -839,14 +839,19 @@ class MessageController {
 
         // Search products with base term if we found a sort preference
         $searchStart = microtime(true);
-        if ($sortPreference && !empty($baseSearchTerm)) {
-            $products = $this->productModel->search($baseSearchTerm, 100);
-        } else {
-            $products = $this->productModel->search($searchTerm, 100);
-        }
+        $actualSearchTerm = ($sortPreference && !empty($baseSearchTerm)) ? $baseSearchTerm : $searchTerm;
+        logMessage("🔍 QuickSearch: Original='{$cleanMessage}' → Translated='{$searchTerm}' → Searching='{$actualSearchTerm}'", 'DEBUG', WEBHOOK_LOG_FILE);
+        $products = $this->productModel->search($actualSearchTerm, 100);
         $searchEnd = microtime(true);
         $searchDuration = round(($searchEnd - $searchStart) * 1000, 2);
-        logMessage("⏱️ Database product search took {$searchDuration}ms for term: '{$searchTerm}'", 'DEBUG', WEBHOOK_LOG_FILE);
+        logMessage("⏱️ Database product search took {$searchDuration}ms, found " . count($products) . " products", 'DEBUG', WEBHOOK_LOG_FILE);
+
+        // If search returned too many products (>50), the search was too generic
+        // Return null to let AI handle it or show "no results"
+        if (count($products) > 50) {
+            logMessage("⚠️ Search too generic - returned " . count($products) . " products. Returning null.", 'DEBUG', WEBHOOK_LOG_FILE);
+            return null;
+        }
 
         if (empty($products)) {
             // No products found - try to suggest similar keywords
