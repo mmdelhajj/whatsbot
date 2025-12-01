@@ -336,25 +336,14 @@ class MessageController {
             return $responses[$lang] ?? $responses['en'];
         }
 
-        // Location/address questions (flexible matching)
+        // Location/address questions (flexible matching) - send only address
         if (preg_match('/(where|location|address|وين|أين|عنوان|فين|محل|où|adresse|localisation)/ui', $messageLower)) {
-            $mapsLink = "https://google.com/maps?q=" . STORE_LATITUDE . "," . STORE_LONGITUDE;
-            $responses = [
-                'ar' => "📍 موقعنا: " . STORE_LOCATION . "\n\n🗺️ خرائط جوجل: " . $mapsLink . "\n\n📞 للتواصل: " . STORE_PHONE . "\n\nنحن هنا لخدمتك! 😊",
-                'en' => "📍 Our location: " . STORE_LOCATION . "\n\n🗺️ Google Maps: " . $mapsLink . "\n\n📞 Phone: " . STORE_PHONE . "\n\nWe're here to help! 😊",
-                'fr' => "📍 Notre adresse: " . STORE_LOCATION . "\n\n🗺️ Google Maps: " . $mapsLink . "\n\n📞 Téléphone: " . STORE_PHONE . "\n\nNous sommes là pour vous aider! 😊"
-            ];
-            return $responses[$lang] ?? $responses['en'];
+            return ResponseTemplates::storeAddress($lang);
         }
 
-        // Hours/opening questions (flexible matching for Arabic variations)
-        if (preg_match('/(hours|open|opening|schedule|timing|horaires|ouvert|وقت|أوقات|ساعات|دوام|إقفال|إغلاق|فتح|العمل|متى)/ui', $messageLower)) {
-            $responses = [
-                'ar' => "🕐 أوقات العمل: " . STORE_HOURS . "\n\n📞 للاستفسار: " . STORE_PHONE . "\n\nأهلاً وسهلاً بك! 😊",
-                'en' => "🕐 Business hours: " . STORE_HOURS . "\n\n📞 Contact: " . STORE_PHONE . "\n\nWelcome! 😊",
-                'fr' => "🕐 Heures d'ouverture: " . STORE_HOURS . "\n\n📞 Contact: " . STORE_PHONE . "\n\nBienvenue! 😊"
-            ];
-            return $responses[$lang] ?? $responses['en'];
+        // Hours/opening questions (flexible matching for Arabic variations) - send only hours
+        if (preg_match('/(hours|open|opening|close|closing|schedule|timing|horaires|ouvert|fermé|وقت|أوقات|ساعات|دوام|إقفال|إغلاق|فتح|العمل|متى)/ui', $messageLower)) {
+            return ResponseTemplates::storeHours($lang);
         }
 
         // Who are you / identity questions
@@ -367,16 +356,30 @@ class MessageController {
             return $responses[$lang] ?? $responses['en'];
         }
 
-        // Contact/phone questions (but exclude department-specific requests)
-        // Don't match if message contains department keywords (those are handled by custom Q&A)
-        if (preg_match('/\b(phone|contact|call|رقم|هاتف|اتصال|téléphone|appeler|numéro)\b/ui', $messageLower)
-            && !preg_match('/(numbers|number|center|centre|printing|print|stationary|photo|copy|department|departments|ارقام|مركز|نسخ|طباعة|مكتبة|تصوير|قسم)/ui', $messageLower)) {
-            $responses = [
-                'ar' => "📞 رقم الهاتف: " . STORE_PHONE . "\n📍 الموقع: " . STORE_LOCATION . "\n🌐 الموقع الإلكتروني: " . STORE_WEBSITE . "\n\nتواصل معنا بأي وقت! 😊",
-                'en' => "📞 Phone: " . STORE_PHONE . "\n📍 Location: " . STORE_LOCATION . "\n🌐 Website: " . STORE_WEBSITE . "\n\nContact us anytime! 😊",
-                'fr' => "📞 Téléphone: " . STORE_PHONE . "\n📍 Adresse: " . STORE_LOCATION . "\n🌐 Site web: " . STORE_WEBSITE . "\n\nContactez-nous à tout moment! 😊"
-            ];
-            return $responses[$lang] ?? $responses['en'];
+        // Contact/phone questions (but exclude department-specific requests) - send only phone
+        if (preg_match('/\b(phone|phone number|call|رقم|هاتف|تلفون|téléphone|appeler|numéro)\b/ui', $messageLower)
+            && !preg_match('/(center|centre|printing|print|stationary|photo|copy|department|departments|مركز|نسخ|طباعة|مكتبة|تصوير|قسم)/ui', $messageLower)) {
+            return ResponseTemplates::storePhone($lang);
+        }
+
+        // General contact questions - send full info
+        if (preg_match('/\b(contact|اتصال|contacter)\b/ui', $messageLower)) {
+            return ResponseTemplates::storeInfo($lang);
+        }
+
+        // Social media / Instagram questions - send only Instagram
+        if (preg_match('/(instagram|insta|انستغرام|انستقرام)/ui', $messageLower)) {
+            return ResponseTemplates::storeInstagram($lang);
+        }
+
+        // Facebook questions - send only Facebook (or Instagram if no Facebook)
+        if (preg_match('/(facebook|fb|فيسبوك)/ui', $messageLower)) {
+            return ResponseTemplates::storeFacebook($lang);
+        }
+
+        // General social media questions - send all social links
+        if (preg_match('/(social media|تواصل اجتماعي|réseaux sociaux)/ui', $messageLower)) {
+            return ResponseTemplates::storeSocial($lang);
         }
 
         // Thanks/gratitude responses (common, should be instant)

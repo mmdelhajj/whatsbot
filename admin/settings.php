@@ -63,6 +63,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
     }
 }
 
+// Handle store info update (database-based)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_store_info'])) {
+    try {
+        $db = Database::getInstance();
+
+        $storeFields = [
+            'store_name' => $_POST['db_store_name'] ?? '',
+            'store_address' => $_POST['db_store_address'] ?? '',
+            'store_phone' => $_POST['db_store_phone'] ?? '',
+            'store_whatsapp' => $_POST['db_store_whatsapp'] ?? '',
+            'store_instagram' => $_POST['db_store_instagram'] ?? '',
+            'store_location_url' => $_POST['db_store_location_url'] ?? '',
+            'store_hours_monday' => $_POST['db_hours_monday'] ?? '',
+            'store_hours_tuesday' => $_POST['db_hours_tuesday'] ?? '',
+            'store_hours_wednesday' => $_POST['db_hours_wednesday'] ?? '',
+            'store_hours_thursday' => $_POST['db_hours_thursday'] ?? '',
+            'store_hours_friday' => $_POST['db_hours_friday'] ?? '',
+            'store_hours_saturday' => $_POST['db_hours_saturday'] ?? '',
+            'store_hours_sunday' => $_POST['db_hours_sunday'] ?? '',
+        ];
+
+        foreach ($storeFields as $key => $value) {
+            $db->query("INSERT INTO bot_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = ?", [$key, $value, $value]);
+        }
+
+        $message = '✅ Store information saved successfully!';
+        $messageType = 'success';
+    } catch (Exception $e) {
+        $message = '❌ Error saving store info: ' . $e->getMessage();
+        $messageType = 'error';
+    }
+}
+
 // Handle settings update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
     try {
@@ -189,6 +222,15 @@ $currentSettings = [
     'store_hours' => $envSettings['store_hours'] ?? '',
     'sync_interval' => $envSettings['sync_interval'] ?? '240'
 ];
+
+// Load database-based store settings
+$db = Database::getInstance();
+$dbStoreSettings = [];
+$dbSettings = $db->fetchAll("SELECT setting_key, setting_value FROM bot_settings WHERE setting_key LIKE 'store_%'");
+foreach ($dbSettings as $s) {
+    $key = str_replace('store_', '', $s['setting_key']);
+    $dbStoreSettings[$key] = $s['setting_value'];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -282,6 +324,73 @@ $currentSettings = [
             </form>
         </div>
 
+        <!-- Store Information (Database) - Used by Bot -->
+        <div class="section">
+            <h2>🏪 Store Information (Bot Responses)</h2>
+            <p style="color: #6b7280; margin-bottom: 20px;">This information is shown to customers when they ask about store hours, location, or contact info.</p>
+            <form method="POST">
+                <div class="settings-grid">
+                    <div class="form-group">
+                        <label>Store Name</label>
+                        <input type="text" name="db_store_name" value="<?= htmlspecialchars($dbStoreSettings['name'] ?? '') ?>" placeholder="Librairie Memoires">
+                    </div>
+                    <div class="form-group">
+                        <label>Address</label>
+                        <input type="text" name="db_store_address" value="<?= htmlspecialchars($dbStoreSettings['address'] ?? '') ?>" placeholder="Main Road, Kfar Hbab">
+                    </div>
+                    <div class="form-group">
+                        <label>Phone Number</label>
+                        <input type="text" name="db_store_phone" value="<?= htmlspecialchars($dbStoreSettings['phone'] ?? '') ?>" placeholder="+961 9 852 081">
+                    </div>
+                    <div class="form-group">
+                        <label>WhatsApp Number</label>
+                        <input type="text" name="db_store_whatsapp" value="<?= htmlspecialchars($dbStoreSettings['whatsapp'] ?? '') ?>" placeholder="+961 81 425 673">
+                    </div>
+                    <div class="form-group">
+                        <label>Instagram</label>
+                        <input type="text" name="db_store_instagram" value="<?= htmlspecialchars($dbStoreSettings['instagram'] ?? '') ?>" placeholder="@librairiememoires">
+                    </div>
+                    <div class="form-group">
+                        <label>Google Maps URL</label>
+                        <input type="url" name="db_store_location_url" value="<?= htmlspecialchars($dbStoreSettings['location_url'] ?? '') ?>" placeholder="https://maps.app.goo.gl/...">
+                    </div>
+                </div>
+
+                <h3 style="margin: 20px 0 15px; color: #374151;">🕐 Opening Hours</h3>
+                <div class="settings-grid">
+                    <div class="form-group">
+                        <label>Monday</label>
+                        <input type="text" name="db_hours_monday" value="<?= htmlspecialchars($dbStoreSettings['hours_monday'] ?? '') ?>" placeholder="08:00-20:00">
+                    </div>
+                    <div class="form-group">
+                        <label>Tuesday</label>
+                        <input type="text" name="db_hours_tuesday" value="<?= htmlspecialchars($dbStoreSettings['hours_tuesday'] ?? '') ?>" placeholder="08:00-20:00">
+                    </div>
+                    <div class="form-group">
+                        <label>Wednesday</label>
+                        <input type="text" name="db_hours_wednesday" value="<?= htmlspecialchars($dbStoreSettings['hours_wednesday'] ?? '') ?>" placeholder="07:00-20:00">
+                    </div>
+                    <div class="form-group">
+                        <label>Thursday</label>
+                        <input type="text" name="db_hours_thursday" value="<?= htmlspecialchars($dbStoreSettings['hours_thursday'] ?? '') ?>" placeholder="07:00-20:00">
+                    </div>
+                    <div class="form-group">
+                        <label>Friday</label>
+                        <input type="text" name="db_hours_friday" value="<?= htmlspecialchars($dbStoreSettings['hours_friday'] ?? '') ?>" placeholder="07:00-20:00">
+                    </div>
+                    <div class="form-group">
+                        <label>Saturday</label>
+                        <input type="text" name="db_hours_saturday" value="<?= htmlspecialchars($dbStoreSettings['hours_saturday'] ?? '') ?>" placeholder="08:00-19:00">
+                    </div>
+                    <div class="form-group">
+                        <label>Sunday</label>
+                        <input type="text" name="db_hours_sunday" value="<?= htmlspecialchars($dbStoreSettings['hours_sunday'] ?? '') ?>" placeholder="Closed">
+                    </div>
+                </div>
+                <button type="submit" name="save_store_info" class="save-btn">💾 Save Store Information</button>
+            </form>
+        </div>
+
         <!-- License Information Section (Read-Only) -->
         <div class="section">
             <h2>🔑 License Information</h2>
@@ -337,43 +446,8 @@ $currentSettings = [
             </div>
 
             <div class="section">
-                <h2>🏢 Store Information</h2>
+                <h2>⚙️ System Settings</h2>
                 <div class="settings-grid">
-                    <div class="form-group">
-                        <label>Store Name</label>
-                        <input type="text" name="store_name" value="<?= htmlspecialchars($currentSettings['store_name']) ?>" required>
-                        <small>Name of your store/business (shown to customers)</small>
-                    </div>
-                    <div class="form-group">
-                        <label>Store Location</label>
-                        <input type="text" name="store_location" value="<?= htmlspecialchars($currentSettings['store_location']) ?>">
-                        <small>Physical address or city (e.g., Kfarhbab, Ghazir, Lebanon)</small>
-                    </div>
-                    <div class="form-group">
-                        <label>Store Latitude</label>
-                        <input type="text" name="store_latitude" value="<?= htmlspecialchars($currentSettings['store_latitude']) ?>" placeholder="34.00951559789577">
-                        <small>GPS Latitude for Google Maps (e.g., 34.00951559789577)</small>
-                    </div>
-                    <div class="form-group">
-                        <label>Store Longitude</label>
-                        <input type="text" name="store_longitude" value="<?= htmlspecialchars($currentSettings['store_longitude']) ?>" placeholder="35.654434764102675">
-                        <small>GPS Longitude for Google Maps (e.g., 35.654434764102675)</small>
-                    </div>
-                    <div class="form-group">
-                        <label>Store Phone</label>
-                        <input type="text" name="store_phone" value="<?= htmlspecialchars($currentSettings['store_phone']) ?>" placeholder="+961 9 123456">
-                        <small>Main phone number (shown to customers)</small>
-                    </div>
-                    <div class="form-group">
-                        <label>Store Website</label>
-                        <input type="url" name="store_website" value="<?= htmlspecialchars($currentSettings['store_website']) ?>" placeholder="https://example.com">
-                        <small>Your website URL (optional)</small>
-                    </div>
-                    <div class="form-group">
-                        <label>Business Hours</label>
-                        <input type="text" name="store_hours" value="<?= htmlspecialchars($currentSettings['store_hours']) ?>" placeholder="Monday-Saturday 9:00 AM - 7:00 PM">
-                        <small>Opening hours (shown to customers)</small>
-                    </div>
                     <div class="form-group">
                         <label>Timezone</label>
                         <select name="timezone">

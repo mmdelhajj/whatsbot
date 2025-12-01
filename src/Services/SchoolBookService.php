@@ -59,16 +59,29 @@ class SchoolBookService {
 
     // Grade order for sorting (lower = shown first)
     private $gradeOrder = [
-        'PS' => 1, 'MS' => 2, 'GS' => 3,
-        'KG1' => 4, 'KG2' => 5, 'KG3' => 6,
-        'EB1' => 10, 'EB2' => 11, 'EB3' => 12, 'EB4' => 13, 'EB5' => 14,
-        'EB6' => 15, 'EB7' => 16, 'EB8' => 17, 'EB9' => 18,
-        'CP' => 20, 'CE1' => 21, 'CE2' => 22, 'CM1' => 23, 'CM2' => 24,
-        '6eme' => 30, '5eme' => 31, '4eme' => 32, '3eme' => 33,
-        '2nde' => 40, '1ere' => 41, 'Terminale' => 42,
-        'BT1' => 50, 'BT2' => 51, 'BT3' => 52,
-        'SE' => 60, 'LS' => 61,
-        'Level 1' => 70, 'Level 2' => 71, 'Level 3' => 72, 'Level 4' => 73, 'Level 5' => 74,
+        // Preschool
+        'PS' => 1, 'PS1' => 2, 'PS2' => 3, 'PS3' => 4, 'MS' => 5, 'GS' => 6,
+        // Kindergarten
+        'KG1' => 10, 'KG2' => 11, 'KG3' => 12,
+        // Lebanese EB system
+        'EB1' => 20, 'EB2' => 21, 'EB3' => 22, 'EB4' => 23, 'EB5' => 24,
+        'EB6' => 25, 'EB7' => 26, 'EB8' => 27, 'EB9' => 28,
+        // French elementary
+        'CP' => 30, 'CE1' => 31, 'CE2' => 32, 'CM1' => 33, 'CM2' => 34,
+        // English grades
+        'Grade 1' => 40, 'Grade 2' => 41, 'Grade 3' => 42, 'Grade 4' => 43,
+        'Grade 5' => 44, 'Grade 6' => 45, 'Grade 7' => 46, 'Grade 8' => 47,
+        'Grade 9' => 48, 'Grade 10' => 49, 'Grade 11' => 50, 'Grade 12' => 51,
+        // French secondary
+        '6eme' => 60, '5eme' => 61, '4eme' => 62, '3eme' => 63,
+        '2nde' => 64, '1ere' => 65, 'Terminale' => 66,
+        // Lebanese secondary
+        'SE' => 70, 'LS' => 71, 'SV' => 72, 'SG' => 73, 'SH' => 74, 'SSH' => 75,
+        // Technical
+        'BP1' => 80, 'BP2' => 81, 'BT1' => 82, 'BT2' => 83, 'BT3' => 84,
+        // Level-based
+        'Level 1' => 90, 'Level 2' => 91, 'Level 3' => 92, 'Level 4' => 93, 'Level 5' => 94,
+        // General/Unknown
         'General' => 100
     ];
 
@@ -90,6 +103,7 @@ class SchoolBookService {
 
     /**
      * Get all schools with book counts
+     * Includes: in-stock books OR out-of-stock with expected arrival date
      */
     public function getAllSchools() {
         return $this->db->fetchAll(
@@ -101,7 +115,7 @@ class SchoolBookService {
                AND subgroup_name != ''
                AND subgroup_name != 'N / A'
                AND subgroup_name != 'Book Covers'
-               AND stock_quantity > 0
+               AND (stock_quantity > 0 OR expected_arrival IS NOT NULL)
              GROUP BY subgroup_name
              ORDER BY subgroup_name ASC"
         );
@@ -109,74 +123,86 @@ class SchoolBookService {
 
     /**
      * Get grades/classrooms for a specific school
-     * Extracts grades from book names
+     * Uses grade_level column from database (populated from book names)
+     * Includes: in-stock books OR out-of-stock with expected arrival date
      */
     public function getGradesBySchool($schoolName) {
-        // Get all books for this school
-        $books = $this->db->fetchAll(
-            "SELECT id, item_name, price
+        // Get grades directly from database with counts
+        $grades = $this->db->fetchAll(
+            "SELECT
+                grade_level,
+                COUNT(*) as book_count,
+                SUM(price) as total_price
              FROM product_info
              WHERE is_school = 1
                AND subgroup_name = ?
-               AND stock_quantity > 0",
+               AND (stock_quantity > 0 OR expected_arrival IS NOT NULL)
+             GROUP BY grade_level",
             [$schoolName]
         );
 
-        // Group by extracted grade
-        $grades = [];
-        foreach ($books as $book) {
-            $grade = $this->extractGradeFromName($book['item_name']);
-            if (!isset($grades[$grade])) {
-                $grades[$grade] = [
-                    'grade_level' => $grade,
-                    'book_count' => 0,
-                    'total_price' => 0
-                ];
-            }
-            $grades[$grade]['book_count']++;
-            $grades[$grade]['total_price'] += $book['price'];
-        }
-
-        // Sort by grade order
+        // Sort by grade order in PHP
         usort($grades, function($a, $b) {
-            $orderA = $this->gradeOrder[$a['grade_level']] ?? 99;
-            $orderB = $this->gradeOrder[$b['grade_level']] ?? 99;
+            $gradeA = $a['grade_level'] ?? 'General';
+            $gradeB = $b['grade_level'] ?? 'General';
+            $orderA = $this->gradeOrder[$gradeA] ?? 100;
+            $orderB = $this->gradeOrder[$gradeB] ?? 100;
             return $orderA - $orderB;
         });
 
-        return array_values($grades);
+        // Replace NULL with 'General' for display
+        foreach ($grades as &$g) {
+            if ($g['grade_level'] === null) {
+                $g['grade_level'] = 'General';
+            }
+        }
+
+        return $grades;
     }
 
     /**
      * Get books for a specific school and grade
+     * Uses grade_level column from database
+     * Includes: in-stock books OR out-of-stock with expected arrival date
      */
     public function getBooksBySchoolAndGrade($schoolName, $gradeLevel) {
-        // Get all books for this school
-        $allBooks = $this->db->fetchAll(
+        // Handle 'General' grade (books without grade_level)
+        if ($gradeLevel === 'General') {
+            return $this->db->fetchAll(
+                "SELECT id,
+                        id as product_id,
+                        item_name as book_title,
+                        price as book_price,
+                        item_code as isbn,
+                        stock_quantity,
+                        expected_arrival
+                 FROM product_info
+                 WHERE is_school = 1
+                   AND subgroup_name = ?
+                   AND grade_level IS NULL
+                   AND (stock_quantity > 0 OR expected_arrival IS NOT NULL)
+                 ORDER BY stock_quantity > 0 DESC, item_name ASC",
+                [$schoolName]
+            );
+        }
+
+        // Get books by grade_level
+        return $this->db->fetchAll(
             "SELECT id,
                     id as product_id,
                     item_name as book_title,
                     price as book_price,
                     item_code as isbn,
-                    stock_quantity
+                    stock_quantity,
+                    expected_arrival
              FROM product_info
              WHERE is_school = 1
                AND subgroup_name = ?
-               AND stock_quantity > 0
-             ORDER BY item_name ASC",
-            [$schoolName]
+               AND grade_level = ?
+               AND (stock_quantity > 0 OR expected_arrival IS NOT NULL)
+             ORDER BY stock_quantity > 0 DESC, item_name ASC",
+            [$schoolName, $gradeLevel]
         );
-
-        // Filter by grade
-        $filteredBooks = [];
-        foreach ($allBooks as $book) {
-            $bookGrade = $this->extractGradeFromName($book['book_title']);
-            if ($bookGrade === $gradeLevel) {
-                $filteredBooks[] = $book;
-            }
-        }
-
-        return $filteredBooks;
     }
 
     /**
@@ -198,6 +224,7 @@ class SchoolBookService {
 
     /**
      * Get all books for a school (without grade filter)
+     * Includes: in-stock books OR out-of-stock with expected arrival date
      */
     public function getBooksBySchool($schoolName) {
         return $this->db->fetchAll(
@@ -206,12 +233,13 @@ class SchoolBookService {
                     item_name as book_title,
                     price as book_price,
                     item_code as isbn,
-                    stock_quantity
+                    stock_quantity,
+                    expected_arrival
              FROM product_info
              WHERE is_school = 1
                AND subgroup_name = ?
-               AND stock_quantity > 0
-             ORDER BY item_name ASC",
+               AND (stock_quantity > 0 OR expected_arrival IS NOT NULL)
+             ORDER BY stock_quantity > 0 DESC, item_name ASC",
             [$schoolName]
         );
     }

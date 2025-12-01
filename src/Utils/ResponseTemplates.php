@@ -128,12 +128,21 @@ class ResponseTemplates {
             } else {
                 // Out of stock - check for expected arrival
                 if (!empty($product['expected_arrival'])) {
-                    $arrivalDate = date('d/m/Y', strtotime($product['expected_arrival']));
-                    $stockInfo = [
-                        'ar' => "❌ (متوقع: {$arrivalDate})",
-                        'en' => "❌ (arriving: {$arrivalDate})",
-                        'fr' => "❌ (arrivée: {$arrivalDate})"
-                    ][$lang] ?? "❌ (arriving: {$arrivalDate})";
+                    // Check if it's "Coming Soon" (special date 1970-01-01)
+                    if ($product['expected_arrival'] === '1970-01-01') {
+                        $stockInfo = [
+                            'ar' => "❌ (قريباً)",
+                            'en' => "❌ (coming soon)",
+                            'fr' => "❌ (bientôt)"
+                        ][$lang] ?? "❌ (coming soon)";
+                    } else {
+                        $arrivalDate = date('d/m/Y', strtotime($product['expected_arrival']));
+                        $stockInfo = [
+                            'ar' => "❌ (متوقع: {$arrivalDate})",
+                            'en' => "❌ (arriving: {$arrivalDate})",
+                            'fr' => "❌ (arrivée: {$arrivalDate})"
+                        ][$lang] ?? "❌ (arriving: {$arrivalDate})";
+                    }
                 } else {
                     $stockInfo = '❌';
                 }
@@ -367,6 +376,222 @@ class ResponseTemplates {
             'ar' => "❌ عذراً، هذا المنتج غير متوفر حالياً.",
             'en' => "❌ Sorry, this product is currently unavailable.",
             'fr' => "❌ Désolé, ce produit est actuellement indisponible."
+        ];
+
+        return $messages[$lang] ?? $messages['en'];
+    }
+
+    /**
+     * Get store settings from database
+     */
+    private static function getStoreSettings() {
+        $db = Database::getInstance();
+        $settings = $db->fetchAll("SELECT setting_key, setting_value FROM bot_settings WHERE setting_key LIKE 'store_%'");
+        $store = [];
+        foreach ($settings as $s) {
+            $key = str_replace('store_', '', $s['setting_key']);
+            $store[$key] = $s['setting_value'];
+        }
+        return $store;
+    }
+
+    /**
+     * Get full store information (hours, location, contact)
+     */
+    public static function storeInfo($lang) {
+        $store = self::getStoreSettings();
+
+        $name = $store['name'] ?? STORE_NAME;
+        $address = $store['address'] ?? '';
+        $phone = $store['phone'] ?? '';
+        $whatsapp = $store['whatsapp'] ?? '';
+        $instagram = $store['instagram'] ?? '';
+        $locationUrl = $store['location_url'] ?? '';
+
+        // Get current day to highlight
+        $days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        $currentDay = strtolower(date('l'));
+
+        // Day names in each language
+        $dayNames = [
+            'ar' => ['sunday' => 'الأحد', 'monday' => 'الإثنين', 'tuesday' => 'الثلاثاء', 'wednesday' => 'الأربعاء', 'thursday' => 'الخميس', 'friday' => 'الجمعة', 'saturday' => 'السبت'],
+            'en' => ['sunday' => 'Sunday', 'monday' => 'Monday', 'tuesday' => 'Tuesday', 'wednesday' => 'Wednesday', 'thursday' => 'Thursday', 'friday' => 'Friday', 'saturday' => 'Saturday'],
+            'fr' => ['sunday' => 'Dimanche', 'monday' => 'Lundi', 'tuesday' => 'Mardi', 'wednesday' => 'Mercredi', 'thursday' => 'Jeudi', 'friday' => 'Vendredi', 'saturday' => 'Samedi']
+        ];
+
+        // Build hours list
+        $hoursText = '';
+        foreach ($days as $day) {
+            $hours = $store['hours_' . $day] ?? '-';
+            $dayName = $dayNames[$lang][$day] ?? ucfirst($day);
+            $marker = ($day === $currentDay) ? ' 👈' : '';
+            $hoursText .= "{$dayName}: {$hours}{$marker}\n";
+        }
+
+        $messages = [
+            'ar' => "🏪 *{$name}*\n\n" .
+                    "📍 *العنوان:*\n{$address}\n\n" .
+                    "🕐 *ساعات العمل:*\n{$hoursText}\n" .
+                    "📞 *الهاتف:* {$phone}\n" .
+                    "💬 *واتساب:* {$whatsapp}\n" .
+                    "📸 *انستغرام:* {$instagram}\n\n" .
+                    "📍 *الموقع على الخريطة:*\n{$locationUrl}",
+
+            'en' => "🏪 *{$name}*\n\n" .
+                    "📍 *Address:*\n{$address}\n\n" .
+                    "🕐 *Opening Hours:*\n{$hoursText}\n" .
+                    "📞 *Phone:* {$phone}\n" .
+                    "💬 *WhatsApp:* {$whatsapp}\n" .
+                    "📸 *Instagram:* {$instagram}\n\n" .
+                    "📍 *Location on map:*\n{$locationUrl}",
+
+            'fr' => "🏪 *{$name}*\n\n" .
+                    "📍 *Adresse:*\n{$address}\n\n" .
+                    "🕐 *Heures d'ouverture:*\n{$hoursText}\n" .
+                    "📞 *Téléphone:* {$phone}\n" .
+                    "💬 *WhatsApp:* {$whatsapp}\n" .
+                    "📸 *Instagram:* {$instagram}\n\n" .
+                    "📍 *Emplacement sur la carte:*\n{$locationUrl}"
+        ];
+
+        return $messages[$lang] ?? $messages['en'];
+    }
+
+    /**
+     * Get store address only
+     */
+    public static function storeAddress($lang) {
+        $store = self::getStoreSettings();
+        $address = $store['address'] ?? '';
+        $locationUrl = $store['location_url'] ?? '';
+
+        $messages = [
+            'ar' => "📍 *عنواننا:*\n{$address}\n\n🗺️ *الموقع على الخريطة:*\n{$locationUrl}",
+            'en' => "📍 *Our Address:*\n{$address}\n\n🗺️ *Location on map:*\n{$locationUrl}",
+            'fr' => "📍 *Notre adresse:*\n{$address}\n\n🗺️ *Emplacement:*\n{$locationUrl}"
+        ];
+
+        return $messages[$lang] ?? $messages['en'];
+    }
+
+    /**
+     * Get store hours only
+     */
+    public static function storeHours($lang) {
+        $store = self::getStoreSettings();
+
+        $days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        $currentDay = strtolower(date('l'));
+
+        $dayNames = [
+            'ar' => ['sunday' => 'الأحد', 'monday' => 'الإثنين', 'tuesday' => 'الثلاثاء', 'wednesday' => 'الأربعاء', 'thursday' => 'الخميس', 'friday' => 'الجمعة', 'saturday' => 'السبت'],
+            'en' => ['sunday' => 'Sunday', 'monday' => 'Monday', 'tuesday' => 'Tuesday', 'wednesday' => 'Wednesday', 'thursday' => 'Thursday', 'friday' => 'Friday', 'saturday' => 'Saturday'],
+            'fr' => ['sunday' => 'Dimanche', 'monday' => 'Lundi', 'tuesday' => 'Mardi', 'wednesday' => 'Mercredi', 'thursday' => 'Jeudi', 'friday' => 'Vendredi', 'saturday' => 'Samedi']
+        ];
+
+        $hoursText = '';
+        foreach ($days as $day) {
+            $hours = $store['hours_' . $day] ?? '-';
+            $dayName = $dayNames[$lang][$day] ?? ucfirst($day);
+            $marker = ($day === $currentDay) ? ' 👈' : '';
+            $hoursText .= "{$dayName}: {$hours}{$marker}\n";
+        }
+
+        $messages = [
+            'ar' => "🕐 *ساعات العمل:*\n\n{$hoursText}",
+            'en' => "🕐 *Opening Hours:*\n\n{$hoursText}",
+            'fr' => "🕐 *Heures d'ouverture:*\n\n{$hoursText}"
+        ];
+
+        return $messages[$lang] ?? $messages['en'];
+    }
+
+    /**
+     * Get store phone only
+     */
+    public static function storePhone($lang) {
+        $store = self::getStoreSettings();
+        $phone = $store['phone'] ?? '';
+        $whatsapp = $store['whatsapp'] ?? '';
+
+        $messages = [
+            'ar' => "📞 *الهاتف:* {$phone}\n💬 *واتساب:* {$whatsapp}",
+            'en' => "📞 *Phone:* {$phone}\n💬 *WhatsApp:* {$whatsapp}",
+            'fr' => "📞 *Téléphone:* {$phone}\n💬 *WhatsApp:* {$whatsapp}"
+        ];
+
+        return $messages[$lang] ?? $messages['en'];
+    }
+
+    /**
+     * Get store Instagram only
+     */
+    public static function storeInstagram($lang) {
+        $store = self::getStoreSettings();
+        $instagram = $store['instagram'] ?? '';
+
+        // Create Instagram URL
+        $instaHandle = ltrim($instagram, '@');
+        $instaUrl = "https://instagram.com/{$instaHandle}";
+
+        $messages = [
+            'ar' => "📸 *انستغرام:* {$instagram}\n🔗 {$instaUrl}",
+            'en' => "📸 *Instagram:* {$instagram}\n🔗 {$instaUrl}",
+            'fr' => "📸 *Instagram:* {$instagram}\n🔗 {$instaUrl}"
+        ];
+
+        return $messages[$lang] ?? $messages['en'];
+    }
+
+    /**
+     * Get store Facebook only
+     */
+    public static function storeFacebook($lang) {
+        $store = self::getStoreSettings();
+        $facebook = $store['facebook'] ?? '';
+
+        // If no Facebook, show Instagram instead
+        if (empty($facebook)) {
+            $instagram = $store['instagram'] ?? '';
+            $instaHandle = ltrim($instagram, '@');
+            $messages = [
+                'ar' => "ليس لدينا فيسبوك حالياً، لكن يمكنك متابعتنا على انستغرام:\n📸 {$instagram}\n🔗 https://instagram.com/{$instaHandle}",
+                'en' => "We don't have Facebook currently, but you can follow us on Instagram:\n📸 {$instagram}\n🔗 https://instagram.com/{$instaHandle}",
+                'fr' => "Nous n'avons pas Facebook actuellement, mais vous pouvez nous suivre sur Instagram:\n📸 {$instagram}\n🔗 https://instagram.com/{$instaHandle}"
+            ];
+            return $messages[$lang] ?? $messages['en'];
+        }
+
+        $messages = [
+            'ar' => "👍 *فيسبوك:* {$facebook}",
+            'en' => "👍 *Facebook:* {$facebook}",
+            'fr' => "👍 *Facebook:* {$facebook}"
+        ];
+
+        return $messages[$lang] ?? $messages['en'];
+    }
+
+    /**
+     * Get all social media links
+     */
+    public static function storeSocial($lang) {
+        $store = self::getStoreSettings();
+        $instagram = $store['instagram'] ?? '';
+        $facebook = $store['facebook'] ?? '';
+
+        $instaHandle = ltrim($instagram, '@');
+        $instaUrl = "https://instagram.com/{$instaHandle}";
+
+        $socialText = "📸 *Instagram:* {$instagram}\n🔗 {$instaUrl}";
+
+        if (!empty($facebook)) {
+            $socialText .= "\n\n👍 *Facebook:* {$facebook}";
+        }
+
+        $messages = [
+            'ar' => "📱 *تابعونا على:*\n\n{$socialText}",
+            'en' => "📱 *Follow us on:*\n\n{$socialText}",
+            'fr' => "📱 *Suivez-nous sur:*\n\n{$socialText}"
         ];
 
         return $messages[$lang] ?? $messages['en'];

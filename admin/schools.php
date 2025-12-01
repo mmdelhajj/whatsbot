@@ -18,6 +18,18 @@ $db = Database::getInstance();
 $successMessage = '';
 $errorMessage = '';
 
+// Handle toggle school books mode
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_mode'])) {
+    $currentMode = $db->fetchOne("SELECT setting_value FROM bot_settings WHERE setting_key = 'school_books_mode'");
+    $newMode = ($currentMode && $currentMode['setting_value'] === 'on') ? 'off' : 'on';
+    $db->query("UPDATE bot_settings SET setting_value = ? WHERE setting_key = 'school_books_mode'", [$newMode]);
+    $successMessage = "School books mode changed to: " . strtoupper($newMode);
+}
+
+// Get current school books mode
+$modeRow = $db->fetchOne("SELECT setting_value FROM bot_settings WHERE setting_key = 'school_books_mode'");
+$schoolBooksMode = $modeRow ? $modeRow['setting_value'] : 'off';
+
 // Handle rename school
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rename_school'])) {
     $oldName = trim($_POST['old_name'] ?? '');
@@ -38,16 +50,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rename_school'])) {
 // Handle update book arrival date
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_arrival'])) {
     $bookId = intval($_POST['book_id'] ?? 0);
+    $arrivalType = $_POST['arrival_type'] ?? 'none';
     $arrivalDate = $_POST['arrival_date'] ?? '';
 
     if ($bookId > 0) {
         try {
-            if (empty($arrivalDate)) {
+            if ($arrivalType === 'none') {
                 $db->query("UPDATE product_info SET expected_arrival = NULL WHERE id = ?", [$bookId]);
-            } else {
+                $successMessage = "Arrival date cleared.";
+            } elseif ($arrivalType === 'coming_soon') {
+                // Use special date '1970-01-01' to indicate "Coming Soon"
+                $db->query("UPDATE product_info SET expected_arrival = '1970-01-01' WHERE id = ?", [$bookId]);
+                $successMessage = "Set to 'Coming Soon'.";
+            } elseif ($arrivalType === 'date' && !empty($arrivalDate)) {
                 $db->query("UPDATE product_info SET expected_arrival = ? WHERE id = ?", [$arrivalDate, $bookId]);
+                $successMessage = "Arrival date updated successfully.";
             }
-            $successMessage = "Arrival date updated successfully.";
         } catch (Exception $e) {
             $errorMessage = "Error updating arrival date: " . $e->getMessage();
         }
@@ -210,20 +228,48 @@ $unavailableBooks = array_sum(array_column($schools, 'unavailable_books'));
         .books-table tr:hover { background: #f9fafb; }
         .status-available { color: #059669; font-weight: 500; }
         .status-unavailable { color: #dc2626; font-weight: 500; }
-        .arrival-form { display: flex; gap: 5px; align-items: center; }
-        .arrival-form input[type="date"] { padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px; }
-        .arrival-form button { padding: 4px 10px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .arrival-form { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+        .arrival-form select { padding: 4px 6px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; min-width: 100px; }
+        .arrival-form input[type="date"] { padding: 4px 6px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; width: 130px; }
+        .arrival-form button { padding: 4px 8px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; }
         .arrival-form button:hover { background: #059669; }
+        .books-table th { white-space: nowrap; }
+        .books-table td:first-child { max-width: 300px; word-wrap: break-word; }
+        .books-table td:last-child { min-width: 180px; }
         .grade-form { display: flex; gap: 5px; align-items: center; }
         .grade-form select { padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px; }
         .grade-form button { padding: 4px 10px; background: #6366f1; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
         .grade-form button:hover { background: #4f46e5; }
+        .toggle-btn { padding: 10px 24px; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; transition: all 0.2s; min-width: 80px; }
+        .toggle-btn.off { background: #ef4444; color: white; }
+        .toggle-btn.off:hover { background: #dc2626; }
+        .toggle-btn.on { background: #22c55e; color: white; }
+        .toggle-btn.on:hover { background: #16a34a; }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>School Books Management</h1>
-        <a href="/admin/">← Back to Dashboard</a>
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+            <div>
+                <h1>School Books Management</h1>
+                <a href="/admin/">← Back to Dashboard</a>
+            </div>
+            <form method="POST" style="display: flex; align-items: center; gap: 12px;">
+                <div style="text-align: right;">
+                    <div style="font-size: 13px; opacity: 0.9;">Bot Mode</div>
+                    <div style="font-size: 11px; opacity: 0.7;">
+                        <?php if ($schoolBooksMode === 'on'): ?>
+                            Full Flow (Interactive)
+                        <?php else: ?>
+                            Links Only (Website)
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <button type="submit" name="toggle_mode" class="toggle-btn <?= $schoolBooksMode === 'on' ? 'on' : 'off' ?>">
+                    <?= strtoupper($schoolBooksMode) ?>
+                </button>
+            </form>
+        </div>
     </div>
 
     <div class="container">
@@ -360,27 +406,56 @@ $unavailableBooks = array_sum(array_column($schools, 'unavailable_books'));
                                         <th>Book Title</th>
                                         <th>Price</th>
                                         <th>Stock</th>
+                                        <th>Arrival</th>
                                         <th>Grade</th>
-                                        <th>Expected Arrival</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php foreach ($books as $book): ?>
+                                        <?php
+                                            $isComingSoon = ($book['expected_arrival'] === '1970-01-01');
+                                            $hasDate = !empty($book['expected_arrival']) && !$isComingSoon;
+                                        ?>
                                         <tr>
                                             <td><?= htmlspecialchars($book['item_name']) ?></td>
                                             <td><?= number_format($book['price'], 0) ?> <?= CURRENCY ?></td>
                                             <td>
                                                 <?php if ($book['stock_quantity'] > 0): ?>
-                                                    <span class="status-available"><?= $book['stock_quantity'] ?> in stock</span>
+                                                    <span class="status-available"><?= $book['stock_quantity'] ?></span>
                                                 <?php else: ?>
-                                                    <span class="status-unavailable">Out of Stock</span>
+                                                    <span class="status-unavailable">Out</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td>
+                                                <?php if ($book['stock_quantity'] <= 0): ?>
+                                                <form method="POST" class="arrival-form">
+                                                    <input type="hidden" name="book_id" value="<?= $book['id'] ?>">
+                                                    <select name="arrival_type" onchange="toggleDateInput(this, <?= $book['id'] ?>)">
+                                                        <option value="none" <?= empty($book['expected_arrival']) ? 'selected' : '' ?>>-- None --</option>
+                                                        <option value="coming_soon" <?= $isComingSoon ? 'selected' : '' ?>>Coming Soon</option>
+                                                        <option value="date" <?= $hasDate ? 'selected' : '' ?>>Set Date</option>
+                                                    </select>
+                                                    <input type="date" name="arrival_date"
+                                                           id="date_<?= $book['id'] ?>"
+                                                           value="<?= $hasDate ? $book['expected_arrival'] : '' ?>"
+                                                           min="<?= date('Y-m-d') ?>"
+                                                           style="<?= $hasDate ? '' : 'display:none;' ?>">
+                                                    <button type="submit" name="update_arrival">Set</button>
+                                                </form>
+                                                <?php if ($isComingSoon): ?>
+                                                    <small style="color: #f59e0b;">📦 Coming Soon</small>
+                                                <?php elseif ($hasDate): ?>
+                                                    <small style="color: #059669;">📅 <?= date('d/m/Y', strtotime($book['expected_arrival'])) ?></small>
+                                                <?php endif; ?>
+                                                <?php else: ?>
+                                                    <span style="color: #9ca3af;">-</span>
                                                 <?php endif; ?>
                                             </td>
                                             <td>
                                                 <form method="POST" class="grade-form">
                                                     <input type="hidden" name="book_id" value="<?= $book['id'] ?>">
                                                     <select name="grade_level">
-                                                        <option value="">-- None --</option>
+                                                        <option value="">--</option>
                                                         <?php foreach ($allGrades as $g): ?>
                                                             <option value="<?= htmlspecialchars($g['grade_level']) ?>"
                                                                 <?= $book['grade_level'] === $g['grade_level'] ? 'selected' : '' ?>>
@@ -390,24 +465,6 @@ $unavailableBooks = array_sum(array_column($schools, 'unavailable_books'));
                                                     </select>
                                                     <button type="submit" name="update_grade">Set</button>
                                                 </form>
-                                            </td>
-                                            <td>
-                                                <?php if ($book['stock_quantity'] <= 0): ?>
-                                                <form method="POST" class="arrival-form">
-                                                    <input type="hidden" name="book_id" value="<?= $book['id'] ?>">
-                                                    <input type="date" name="arrival_date"
-                                                           value="<?= $book['expected_arrival'] ?? '' ?>"
-                                                           min="<?= date('Y-m-d') ?>">
-                                                    <button type="submit" name="update_arrival">Set</button>
-                                                </form>
-                                                <?php if (!empty($book['expected_arrival'])): ?>
-                                                    <small style="color: #059669; display: block; margin-top: 3px;">
-                                                        Arriving: <?= date('M d, Y', strtotime($book['expected_arrival'])) ?>
-                                                    </small>
-                                                <?php endif; ?>
-                                                <?php else: ?>
-                                                    <span style="color: #9ca3af;">-</span>
-                                                <?php endif; ?>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>
@@ -438,6 +495,18 @@ $unavailableBooks = array_sum(array_column($schools, 'unavailable_books'));
                     }
                 }
                 rows[i].style.display = match ? '' : 'none';
+            }
+        }
+
+        function toggleDateInput(select, bookId) {
+            const dateInput = document.getElementById('date_' + bookId);
+            if (select.value === 'date') {
+                dateInput.style.display = '';
+                dateInput.required = true;
+            } else {
+                dateInput.style.display = 'none';
+                dateInput.required = false;
+                dateInput.value = '';
             }
         }
     </script>

@@ -21,6 +21,18 @@ class SchoolBookController {
 
     const BOOKS_PER_PAGE = 8;
 
+    // Website URLs for each school (matching website names)
+    private $schoolWebsiteUrls = [
+        'Antonine Sisters School, Ghazir' => 'https://store.libmemoires.com/antonine-sisters-school-ghazir',
+        'Central College Jounieh' => 'https://store.libmemoires.com/central-college-jounieh',
+        'Ecole Saint Francois' => 'https://store.libmemoires.com/ecole-saint-francois',
+        'Ecole Sja Besançon Kfour' => 'https://store.libmemoires.com/ecole-sja-besan%C3%A7on-kfour',
+        'Lycee Franco Libanais Nahr Ibrahim' => 'https://store.libmemoires.com/lycee-franco-libanais-nahr-ibrahim',
+        'Lycee Libano Allemand Jounieh' => 'https://store.libmemoires.com/lycee-libano-allemand-jounieh',
+        'SSCC Kfarhbab' => 'https://store.libmemoires.com/college-saint-coeur-kfarhbab',
+        'School Divers' => 'https://store.libmemoires.com/books',
+    ];
+
     public function __construct() {
         $this->db = Database::getInstance();
         $this->schoolBookService = new SchoolBookService();
@@ -68,28 +80,38 @@ class SchoolBookController {
 
     /**
      * Show list of all schools
+     * Mode OFF: Just shows school names with website links (no interaction)
+     * Mode ON: Full interactive flow (user selects school -> grades -> books)
      */
     private function showSchoolList($customerId, $lang, $originalMessage = null) {
-        // Check if message contains a school name - skip to that school's grades
-        if ($originalMessage) {
-            $schoolName = $this->schoolBookService->extractSchoolFromMessage($originalMessage);
-            if ($schoolName) {
-                return $this->showGradeList($customerId, $lang, $schoolName);
-            }
-        }
-
         $schools = $this->schoolBookService->getAllSchools();
 
         if (empty($schools)) {
             return $this->getNoSchoolsMessage($lang);
         }
 
-        // Save state
-        $this->conversationState->set($customerId, self::STATE_SELECTING_SCHOOL, [
-            'schools' => $schools
-        ]);
+        // Check school books mode from settings
+        $mode = $this->getSchoolBooksMode();
 
-        return $this->formatSchoolList($schools, $lang);
+        if ($mode === 'on') {
+            // Full interactive flow - save state and show numbered list
+            $this->conversationState->set($customerId, self::STATE_SELECTING_SCHOOL, [
+                'schools' => $schools
+            ]);
+            return $this->formatSchoolListInteractive($schools, $lang);
+        } else {
+            // Links only mode - clear state and show links
+            $this->conversationState->clear($customerId);
+            return $this->formatSchoolList($schools, $lang);
+        }
+    }
+
+    /**
+     * Get school books mode from settings
+     */
+    private function getSchoolBooksMode() {
+        $result = $this->db->fetchOne("SELECT setting_value FROM bot_settings WHERE setting_key = 'school_books_mode'");
+        return $result ? $result['setting_value'] : 'off';
     }
 
     /**
@@ -388,9 +410,44 @@ class SchoolBookController {
     // ============ FORMATTING METHODS ============
 
     /**
-     * Format school list message
+     * Format school list message - Shows only school names with website links (OFF mode)
+     * No numbers, no book counts - just school name and link
      */
     private function formatSchoolList($schools, $lang) {
+        $headers = [
+            'ar' => "📚 *قائمة المدارس المتاحة:*\n\n",
+            'en' => "📚 *Available Schools:*\n\n",
+            'fr' => "📚 *Écoles disponibles:*\n\n"
+        ];
+
+        $message = $headers[$lang] ?? $headers['en'];
+
+        foreach ($schools as $school) {
+            $name = $school['school_name'];
+            $url = $this->schoolWebsiteUrls[$name] ?? null;
+
+            $message .= "🏫 *{$name}*\n";
+            if ($url) {
+                $message .= "🌐 {$url}\n";
+            }
+            $message .= "\n";
+        }
+
+        $footers = [
+            'ar' => "👆 اضغط على الرابط لعرض الكتب على الموقع",
+            'en' => "👆 Click the link to view books on our website",
+            'fr' => "👆 Cliquez sur le lien pour voir les livres sur notre site"
+        ];
+
+        $message .= $footers[$lang] ?? $footers['en'];
+
+        return $message;
+    }
+
+    /**
+     * Format school list for interactive mode (ON mode) - numbered list to select with links
+     */
+    private function formatSchoolListInteractive($schools, $lang) {
         $headers = [
             'ar' => "📚 *قائمة المدارس المتاحة:*\n\n",
             'en' => "📚 *Available Schools:*\n\n",
@@ -402,14 +459,19 @@ class SchoolBookController {
         foreach ($schools as $index => $school) {
             $num = $index + 1;
             $name = $school['school_name'];
+            $url = $this->schoolWebsiteUrls[$name] ?? null;
 
             $message .= "*{$num}.* {$name}\n";
+            if ($url) {
+                $message .= "   🌐 {$url}\n";
+            }
+            $message .= "\n";
         }
 
         $footers = [
-            'ar' => "\n➡️ اكتب رقم المدرسة للاختيار (مثال: *1*)\n🔙 اكتب *cancel* للخروج",
-            'en' => "\n➡️ Type school number to select (example: *1*)\n🔙 Type *cancel* to exit",
-            'fr' => "\n➡️ Tapez le numéro de l'école (exemple: *1*)\n🔙 Tapez *annuler* pour quitter"
+            'ar' => "➡️ اكتب رقم المدرسة للاختيار (مثال: *1*)\n❌ اكتب *cancel* للإلغاء",
+            'en' => "➡️ Type school number to select (example: *1*)\n❌ Type *cancel* to exit",
+            'fr' => "➡️ Tapez le numéro de l'école (exemple: *1*)\n❌ Tapez *annuler* pour quitter"
         ];
 
         $message .= $footers[$lang] ?? $footers['en'];
@@ -463,9 +525,39 @@ class SchoolBookController {
             $num = $index + 1;
             $title = $book['book_title'];
             $price = number_format($book['book_price'], 0);
+            $stockQty = $book['stock_quantity'] ?? 0;
+            $expectedArrival = $book['expected_arrival'] ?? null;
 
             $message .= "*{$num}.* {$title}\n";
-            $message .= "   💰 {$price} " . CURRENCY . "\n\n";
+            $message .= "   💰 {$price} " . CURRENCY;
+
+            // Show stock status
+            if ($stockQty > 0) {
+                $message .= " ✅";
+            } else if ($expectedArrival) {
+                // Out of stock but has arrival info
+                if ($expectedArrival === '1970-01-01') {
+                    // "Coming Soon" - no specific date
+                    $comingSoonText = [
+                        'ar' => "❌ (قريباً)",
+                        'en' => "❌ (coming soon)",
+                        'fr' => "❌ (bientôt)"
+                    ];
+                    $message .= " " . ($comingSoonText[$lang] ?? $comingSoonText['en']);
+                } else {
+                    // Has specific arrival date
+                    $arrivalDate = date('d/m/Y', strtotime($expectedArrival));
+                    $arrivingText = [
+                        'ar' => "❌ (قادم: {$arrivalDate})",
+                        'en' => "❌ (arriving: {$arrivalDate})",
+                        'fr' => "❌ (arrivée: {$arrivalDate})"
+                    ];
+                    $message .= " " . ($arrivingText[$lang] ?? $arrivingText['en']);
+                }
+            } else {
+                $message .= " ❌";
+            }
+            $message .= "\n\n";
         }
 
         // Total summary
