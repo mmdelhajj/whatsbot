@@ -382,9 +382,19 @@ class ResponseTemplates {
     }
 
     /**
-     * Get store settings from database
+     * Cached store settings (static to persist across calls in same request)
+     */
+    private static $storeSettingsCache = null;
+
+    /**
+     * Get store settings from database (cached)
      */
     private static function getStoreSettings() {
+        // Return cached settings if available
+        if (self::$storeSettingsCache !== null) {
+            return self::$storeSettingsCache;
+        }
+
         $db = Database::getInstance();
         $settings = $db->fetchAll("SELECT setting_key, setting_value FROM bot_settings WHERE setting_key LIKE 'store_%'");
         $store = [];
@@ -392,6 +402,9 @@ class ResponseTemplates {
             $key = str_replace('store_', '', $s['setting_key']);
             $store[$key] = $s['setting_value'];
         }
+
+        // Cache for this request
+        self::$storeSettingsCache = $store;
         return $store;
     }
 

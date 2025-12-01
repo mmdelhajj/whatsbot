@@ -445,7 +445,7 @@ class SchoolBookController {
     }
 
     /**
-     * Format school list for interactive mode (ON mode) - numbered list to select with links
+     * Format school list for interactive mode (ON mode) - numbered list to select (no links)
      */
     private function formatSchoolListInteractive($schools, $lang) {
         $headers = [
@@ -459,19 +459,13 @@ class SchoolBookController {
         foreach ($schools as $index => $school) {
             $num = $index + 1;
             $name = $school['school_name'];
-            $url = $this->schoolWebsiteUrls[$name] ?? null;
-
             $message .= "*{$num}.* {$name}\n";
-            if ($url) {
-                $message .= "   🌐 {$url}\n";
-            }
-            $message .= "\n";
         }
 
         $footers = [
-            'ar' => "➡️ اكتب رقم المدرسة للاختيار (مثال: *1*)\n❌ اكتب *cancel* للإلغاء",
-            'en' => "➡️ Type school number to select (example: *1*)\n❌ Type *cancel* to exit",
-            'fr' => "➡️ Tapez le numéro de l'école (exemple: *1*)\n❌ Tapez *annuler* pour quitter"
+            'ar' => "\n➡️ اكتب رقم المدرسة للاختيار (مثال: *1*)\n❌ اكتب *cancel* للإلغاء",
+            'en' => "\n➡️ Type school number to select (example: *1*)\n❌ Type *cancel* to exit",
+            'fr' => "\n➡️ Tapez le numéro de l'école (exemple: *1*)\n❌ Tapez *annuler* pour quitter"
         ];
 
         $message .= $footers[$lang] ?? $footers['en'];

@@ -9,13 +9,12 @@ class Database {
     private $connection;
 
     private function __construct() {
-        $env = $this->loadEnv();
-
+        // Use constants defined in config.php (already loaded)
         try {
             $this->connection = new PDO(
-                "mysql:host={$env['DB_HOST']};dbname={$env['DB_NAME']};charset=utf8mb4",
-                $env['DB_USER'],
-                $env['DB_PASS'],
+                "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4",
+                DB_USER,
+                DB_PASS,
                 [
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
@@ -39,26 +38,6 @@ class Database {
 
     public function getConnection() {
         return $this->connection;
-    }
-
-    private function loadEnv() {
-        $envFile = dirname(__DIR__) . '/.env';
-        if (!file_exists($envFile)) {
-            throw new Exception(".env file not found");
-        }
-
-        $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        $env = [];
-
-        foreach ($lines as $line) {
-            if (strpos($line, '#') === 0) continue;
-            if (strpos($line, '=') === false) continue;
-
-            list($key, $value) = explode('=', $line, 2);
-            $env[trim($key)] = trim($value);
-        }
-
-        return $env;
     }
 
     public function query($sql, $params = []) {
